@@ -19,6 +19,7 @@ import {
 import { useStore } from '../context/StoreContext';
 import { BarcodeStickerModal } from '../components/BarcodeStickerModal';
 import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { QuickPriceModal } from '../components/QuickPriceModal';
 import { ProductThumbnail } from '../components/ProductThumbnail';
 import { playClickSound } from '../utils/sound';
 
@@ -62,15 +63,6 @@ export function InventoryView({ onNavigate }) {
   const handleOpenPriceModal = (p) => {
     playClickSound();
     setEditingPriceProduct(p);
-    setNewPriceInput(String(p.sellPrice));
-  };
-
-  const handleSavePrice = (e) => {
-    e.preventDefault();
-    if (!editingPriceProduct || !newPriceInput) return;
-    playClickSound();
-    updateProductPrice(editingPriceProduct.id, newPriceInput);
-    setEditingPriceProduct(null);
   };
 
   return (
@@ -380,42 +372,11 @@ export function InventoryView({ onNavigate }) {
       )}
 
       {/* Quick Price Edit Modal */}
-      {editingPriceProduct && (
-        <div className="modal-overlay" onClick={() => setEditingPriceProduct(null)}>
-          <div className="modal-content sm-modal animate-scale-up" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">ปรับราคาขาย: {editingPriceProduct.name}</h3>
-            </div>
-            <form onSubmit={handleSavePrice} className="modal-form-body">
-              <p className="text-muted text-sm mb-3">
-                ราคาเดิม: <strong>{editingPriceProduct.sellPrice.toFixed(2)} ฿/{editingPriceProduct.unit}</strong> |
-                ทุน: <strong>{(editingPriceProduct.costPrice || 0).toFixed(2)} ฿</strong>
-              </p>
-              <div className="form-group">
-                <label className="form-label">ราคาขายใหม่ (บาท/{editingPriceProduct.unit}) *:</label>
-                <input
-                  type="number"
-                  step="0.25"
-                  min="0.25"
-                  className="form-control big-number-input highlight-cash"
-                  value={newPriceInput}
-                  onChange={(e) => setNewPriceInput(e.target.value)}
-                  autoFocus
-                  required
-                />
-              </div>
-              <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setEditingPriceProduct(null)}>
-                  ยกเลิก
-                </button>
-                <button type="submit" className="btn btn-primary flex-1 font-bold">
-                  บันทึกราคาใหม่
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <QuickPriceModal
+        product={editingPriceProduct}
+        isOpen={Boolean(editingPriceProduct)}
+        onClose={() => setEditingPriceProduct(null)}
+      />
 
       {/* Barcode Sticker Modal */}
       <BarcodeStickerModal

@@ -705,24 +705,6 @@ export function StoreProvider({ children }) {
     return true;
   };
 
-  const updateProductPrice = (productId, newPrice) => {
-    const parsed = parseFloat(newPrice);
-    if (isNaN(parsed) || parsed < 0) return false;
-
-    setProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, sellPrice: parsed } : p))
-    );
-
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      supabase
-        .from('products')
-        .update({ sell_price: parsed, updated_at: new Date().toISOString() })
-        .eq('id', productId)
-        .then();
-    }
-    return true;
-  };
 
   const addProduct = (productData) => {
     const newProduct = {
@@ -782,6 +764,45 @@ export function StoreProvider({ children }) {
         .eq('id', productId)
         .then();
     }
+  };
+
+  const updateProductPrice = (productId, newSellPrice, newCostPrice = null) => {
+    const parsedSell = parseFloat(newSellPrice);
+    if (isNaN(parsedSell) || parsedSell <= 0) return false;
+
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id === productId) {
+          const updated = {
+            ...p,
+            sellPrice: parsedSell,
+            ...(newCostPrice !== null && !isNaN(parseFloat(newCostPrice))
+              ? { costPrice: parseFloat(newCostPrice) }
+              : {}),
+          };
+          return updated;
+        }
+        return p;
+      })
+    );
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const updateData = {
+        sell_price: parsedSell,
+        updated_at: new Date().toISOString(),
+      };
+      if (newCostPrice !== null && !isNaN(parseFloat(newCostPrice))) {
+        updateData.cost_price = parseFloat(newCostPrice);
+      }
+      supabase
+        .from('products')
+        .update(updateData)
+        .eq('id', productId)
+        .then();
+    }
+
+    return true;
   };
 
   const deleteProduct = (productId) => {

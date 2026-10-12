@@ -21,6 +21,7 @@ import { scanBarcodeFromImageFile } from '../utils/barcodeScanner';
 import { BarcodeStickerModal } from '../components/BarcodeStickerModal';
 import { EasyAddProductModal } from '../components/EasyAddProductModal';
 import { CameraScannerModal } from '../components/CameraScannerModal';
+import { QuickPriceModal } from '../components/QuickPriceModal';
 import { ProductThumbnail } from '../components/ProductThumbnail';
 import { FALLBACK_IMAGE_BY_CATEGORY, PRODUCT_IMAGE_PRESETS } from '../data/productPresets';
 import { playClickSound, playScanBeep } from '../utils/sound';
@@ -35,6 +36,7 @@ export function ProductsView() {
   // Form Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [quickPriceProduct, setQuickPriceProduct] = useState(null);
 
   // Sticker Modal
   const [stickerProduct, setStickerProduct] = useState(null);
@@ -291,9 +293,23 @@ export function ProductsView() {
                 </td>
                 <td>{p.costPrice ? `${p.costPrice.toFixed(2)} ฿` : '-'}</td>
                 <td>
-                  <strong className="text-primary font-bold">
-                    {p.sellPrice.toFixed(2)} ฿
-                  </strong>
+                  <div className="flex items-center gap-1.5">
+                    <strong className="text-primary font-bold">
+                      {p.sellPrice.toFixed(2)} ฿
+                    </strong>
+                    <button
+                      type="button"
+                      className="btn-quick-price-edit"
+                      title="ปรับราคาขายด่วน"
+                      onClick={() => {
+                        playClickSound();
+                        setQuickPriceProduct(p);
+                      }}
+                    >
+                      <Edit size={11} />
+                      <span>ปรับ</span>
+                    </button>
+                  </div>
                 </td>
                 <td>
                   <span className="font-mono font-bold">
@@ -588,6 +604,13 @@ export function ProductsView() {
           setBarcode(code);
           setIsBarcodeScannerOpen(false);
         }}
+      />
+
+      {/* Quick Price Modal */}
+      <QuickPriceModal
+        product={quickPriceProduct}
+        isOpen={Boolean(quickPriceProduct)}
+        onClose={() => setQuickPriceProduct(null)}
       />
     </div>
   );

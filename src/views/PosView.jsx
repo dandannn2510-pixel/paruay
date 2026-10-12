@@ -16,6 +16,8 @@ import {
   RotateCcw,
   UserCheck,
   Menu,
+  DollarSign,
+  Edit,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHardwareScanner } from '../hooks/useHardwareScanner';
@@ -25,6 +27,7 @@ import { UnregisteredItemModal } from '../components/UnregisteredItemModal';
 import { PaymentModal } from '../components/PaymentModal';
 import { ParkedBillsModal } from '../components/ParkedBillsModal';
 import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { QuickPriceModal } from '../components/QuickPriceModal';
 import { getProductPhotoUrl, handleImageFallback } from '../utils/imageUtils';
 import { playScanBeep, playErrorBuzz, playClickSound, playCashRegisterChime } from '../utils/sound';
 
@@ -62,6 +65,7 @@ export function PosView({ onOpenMenu }) {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isParkedModalOpen, setIsParkedModalOpen] = useState(false);
   const [isEasyAddOpen, setIsEasyAddOpen] = useState(false);
+  const [editingPriceProduct, setEditingPriceProduct] = useState(null);
 
   // Cheerful checkout success toast (replaces receipt modal)
   const [checkoutSuccessToast, setCheckoutSuccessToast] = useState(null);
@@ -364,6 +368,18 @@ export function PosView({ onOpenMenu }) {
                           {p.sellPrice.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                           <small className="unit-label"> ฿/{p.unit}</small>
                         </span>
+                        <button
+                          type="button"
+                          className="btn-quick-price-edit"
+                          title="ปรับราคาด่วน"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingPriceProduct(p);
+                          }}
+                        >
+                          <Edit size={12} />
+                          <span>ปรับราคา</span>
+                        </button>
                         <span className="prod-stock-hint">
                           เหลือ: {p.isWeighted ? p.stock.toFixed(3) : p.stock}
                         </span>
@@ -593,6 +609,13 @@ export function PosView({ onOpenMenu }) {
       <EasyAddProductModal
         isOpen={isEasyAddOpen}
         onClose={() => setIsEasyAddOpen(false)}
+      />
+
+      {/* 7. Quick Price Modal */}
+      <QuickPriceModal
+        product={editingPriceProduct}
+        isOpen={Boolean(editingPriceProduct)}
+        onClose={() => setEditingPriceProduct(null)}
       />
     </div>
   );

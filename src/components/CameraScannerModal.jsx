@@ -12,6 +12,7 @@ import {
   AlertCircle,
   HelpCircle,
 } from 'lucide-react';
+import { scanBarcodeFromImageFile } from '../utils/barcodeScanner';
 import { playScanBeep, playClickSound } from '../utils/sound';
 
 export function CameraScannerModal({ isOpen, onClose, onDetected }) {
@@ -255,7 +256,7 @@ export function CameraScannerModal({ isOpen, onClose, onDetected }) {
     }
   };
 
-  // Scan from photo / snap file
+  // Scan from photo / snap file using multi-angle scanner
   const handleFileScan = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -264,11 +265,7 @@ export function CameraScannerModal({ isOpen, onClose, onDetected }) {
     playClickSound();
 
     try {
-      let tempScanner = scannerRef.current;
-      if (!tempScanner) {
-        tempScanner = new Html5Qrcode(containerIdRef.current, { verbose: false });
-      }
-      const decodedText = await tempScanner.scanFile(file, true);
+      const decodedText = await scanBarcodeFromImageFile(file);
       if (decodedText) {
         handleScanSuccess(decodedText);
       }
@@ -281,17 +278,23 @@ export function CameraScannerModal({ isOpen, onClose, onDetected }) {
     }
   };
 
+  const handleClose = () => {
+    playClickSound();
+    onClose();
+    stopScanner();
+  };
+
   const handleManualSubmit = (e) => {
     e.preventDefault();
     if (!manualCode.trim()) return;
     playScanBeep();
     onDetected(manualCode.trim());
     setManualCode('');
-    if (!continuousMode) onClose();
+    if (!continuousMode) handleClose();
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
       <div
         className="modal-content scanner-modal animate-scale-up"
         onClick={(e) => e.stopPropagation()}
@@ -309,7 +312,7 @@ export function CameraScannerModal({ isOpen, onClose, onDetected }) {
               </p>
             </div>
           </div>
-          <button className="icon-btn close-btn" onClick={onClose} title="ปิด">
+          <button className="icon-btn close-btn" onClick={handleClose} title="ปิด">
             <X size={20} />
           </button>
         </div>
@@ -458,7 +461,7 @@ export function CameraScannerModal({ isOpen, onClose, onDetected }) {
         </form>
 
         <div className="modal-actions">
-          <button type="button" className="btn btn-secondary w-full" onClick={onClose}>
+          <button type="button" className="btn btn-secondary w-full" onClick={handleClose}>
             ปิดหน้าต่างกล้อง
           </button>
         </div>
