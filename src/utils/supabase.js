@@ -1,16 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
 
+const DEFAULT_URL = 'https://zyyizjwlpzplqpfnaqtn.supabase.co';
+const DEFAULT_KEY = 'sb_publishable_cVUUtTDcpnoHrXcSkjtREw_Xllo-mHl';
+
 let cachedClient = null;
 let lastUrl = '';
 let lastKey = '';
 
 /**
  * Get or create Supabase client instance
- * Supports either Vite env vars or user-configured credentials in Settings
+ * Automatically connects to the shop database across all devices
  */
 export function getSupabaseClient(customUrl = null, customKey = null) {
-  const url = customUrl || import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('paruay_supabase_url');
-  const key = customKey || import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('paruay_supabase_anon_key');
+  const url =
+    customUrl ||
+    import.meta.env?.VITE_SUPABASE_URL ||
+    localStorage.getItem('paruay_supabase_url') ||
+    DEFAULT_URL;
+
+  const key =
+    customKey ||
+    import.meta.env?.VITE_SUPABASE_ANON_KEY ||
+    localStorage.getItem('paruay_supabase_anon_key') ||
+    DEFAULT_KEY;
 
   if (!url || !key) {
     return null;
