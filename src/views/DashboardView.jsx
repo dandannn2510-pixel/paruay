@@ -16,6 +16,7 @@ import {
   QrCode,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { ProductThumbnail } from '../components/ProductThumbnail';
 import { playClickSound } from '../utils/sound';
 
 export function DashboardView({ onNavigate }) {
@@ -183,8 +184,8 @@ export function DashboardView({ onNavigate }) {
                 {/* Out of Stock (Red) */}
                 {outOfStockProducts.map((p) => (
                   <div key={p.id} className="alert-item-card out-of-stock-border">
-                    <div className="alert-item-title">
-                      <span className="emoji-chip">{p.image || '📦'}</span>
+                    <div className="alert-item-title flex items-center gap-2">
+                      <ProductThumbnail product={p} size={36} />
                       <div>
                         <strong>{p.name}</strong>
                         <div className="text-muted text-xs font-mono">{p.barcode || 'ไม่มีบาร์โค้ด'}</div>
@@ -206,8 +207,8 @@ export function DashboardView({ onNavigate }) {
                 {/* Low Stock (Yellow) */}
                 {lowStockProducts.map((p) => (
                   <div key={p.id} className="alert-item-card low-stock-border">
-                    <div className="alert-item-title">
-                      <span className="emoji-chip">{p.image || '📦'}</span>
+                    <div className="alert-item-title flex items-center gap-2">
+                      <ProductThumbnail product={p} size={36} />
                       <div>
                         <strong>{p.name}</strong>
                         <div className="text-muted text-xs font-mono">{p.barcode || 'ไม่มีบาร์โค้ด'}</div>
@@ -253,7 +254,7 @@ export function DashboardView({ onNavigate }) {
               {freshProduceProducts.slice(0, 6).map((item) => (
                 <div key={item.id} className="fresh-item-card">
                   <div className="flex items-center gap-3">
-                    <span className="fresh-emoji">{item.image || '🥩'}</span>
+                    <ProductThumbnail product={item} size={42} />
                     <div>
                       <h4 className="font-medium">{item.name}</h4>
                       <p className="text-xs text-muted">

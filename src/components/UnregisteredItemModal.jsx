@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, ShoppingBag, PlusCircle, X, Check } from 'lucide-react';
+import { AlertCircle, ShoppingBag, PlusCircle, X, Check, Image } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { FALLBACK_IMAGE_BY_CATEGORY, PRODUCT_IMAGE_PRESETS } from '../data/productPresets';
 import { playClickSound } from '../utils/sound';
 
 export function UnregisteredItemModal({ isOpen, barcode, onClose, onQuickSale, onRegisterNew }) {
@@ -21,12 +22,14 @@ export function UnregisteredItemModal({ isOpen, barcode, onClose, onQuickSale, o
   const [regCostPrice, setRegCostPrice] = useState('');
   const [regStock, setRegStock] = useState('10');
   const [regUnit, setRegUnit] = useState('ชิ้น');
+  const [regImage, setRegImage] = useState(PRODUCT_IMAGE_PRESETS[12].url);
 
   useEffect(() => {
     setTempName(`สินค้านอกคลัง [${barcode || 'ชั่วคราว'}]`);
     setRegName('');
     setTempPrice('');
     setRegSellPrice('');
+    setRegImage(PRODUCT_IMAGE_PRESETS[12].url);
   }, [barcode]);
 
   const handleTempSubmit = (e) => {
@@ -60,6 +63,7 @@ export function UnregisteredItemModal({ isOpen, barcode, onClose, onQuickSale, o
       type: 'packaged',
       isWeighted: false,
       minStockAlert: 5,
+      image: regImage || FALLBACK_IMAGE_BY_CATEGORY[regCategory] || PRODUCT_IMAGE_PRESETS[12].url,
     });
     onClose();
   };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Scale, Banknote, Plus, Check, X, Calculator, ArrowRightLeft } from 'lucide-react';
+import { ProductThumbnail } from './ProductThumbnail';
 import { playClickSound } from '../utils/sound';
 
 export function WeightCalculatorModal({ product, isOpen, onClose, onConfirm }) {
@@ -83,11 +84,7 @@ export function WeightCalculatorModal({ product, isOpen, onClose, onConfirm }) {
         {/* Header */}
         <div className="modal-header">
           <div className="header-info">
-            {product.image && (product.image.startsWith('http') || product.image.startsWith('/')) ? (
-              <img src={product.image} alt={product.name} className="product-modal-thumb" />
-            ) : (
-              <span className="product-icon">🥩</span>
-            )}
+            <ProductThumbnail product={product} size={50} className="product-modal-thumb" />
             <div>
               <h3 className="modal-title">{product.name}</h3>
               <p className="modal-subtitle">

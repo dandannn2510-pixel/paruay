@@ -14,7 +14,7 @@ export function StoreProvider({ children }) {
       const saved = localStorage.getItem(LS_PREFIX + 'products');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.length > 0 && (!parsed[0].image || !parsed[0].image.startsWith('http'))) {
+        if (parsed.length > 0 && (!parsed[0].image || (!parsed[0].image.startsWith('http') && !parsed[0].image.startsWith('data:') && !parsed[0].image.startsWith('/')))) {
           return INITIAL_PRODUCTS;
         }
         return parsed;

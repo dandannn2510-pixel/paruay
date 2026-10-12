@@ -1938,3 +1938,226 @@ h1, h2, h3, h4, h5, h6 {
 .animate-scale-up { animation: scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
 .animate-slide-up { animation: slideUp 0.2s ease-out; }
 .animate-slide-right { animation: slideRight 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* =========================================================
+   EASY ADD PRODUCT MODAL & PRODUCT THUMBNAILS
+   ========================================================= */
+
+.easy-add-modal {
+  max-width: 520px;
+}
+
+.type-toggle-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+}
+
+.type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0.75rem 0.5rem;
+  background: var(--bg-surface-elevated, #1a2234);
+  border: 1.5px solid var(--border-color, #2d3748);
+  border-radius: var(--radius-md, 10px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.type-card:hover {
+  border-color: var(--brand-red, #e11d48);
+  background: rgba(225, 29, 72, 0.05);
+}
+
+.type-card.active {
+  border-color: var(--brand-red, #e11d48);
+  background: rgba(225, 29, 72, 0.12);
+  box-shadow: 0 0 0 1px var(--brand-red, #e11d48);
+  color: #ffffff;
+}
+
+.type-card svg {
+  color: var(--brand-gold, #fbbf24);
+  margin-bottom: 0.35rem;
+}
+
+.type-card.active svg {
+  color: var(--brand-red, #e11d48);
+}
+
+.type-card-info strong {
+  display: block;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.type-card-info small {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted, #94a3b8);
+  margin-top: 0.2rem;
+  line-height: 1.2;
+}
+
+.image-select-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--bg-surface-elevated, #1a2234);
+  border: 1px solid var(--border-color, #2d3748);
+  padding: 0.65rem;
+  border-radius: var(--radius-md, 10px);
+}
+
+.image-preview-box {
+  width: 72px;
+  height: 72px;
+  min-width: 72px;
+  min-height: 72px;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: #0f172a;
+  border: 1.5px solid var(--border-color, #334155);
+}
+
+.preview-img-square {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.preset-images-tray {
+  background: var(--bg-surface-elevated, #1a2234);
+  border: 1px solid var(--border-color, #2d3748);
+  border-radius: var(--radius-md, 10px);
+  padding: 0.65rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 0.5rem;
+}
+
+.preset-thumb-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-surface, #0f172a);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 6px;
+  padding: 0.35rem 0.2rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.preset-thumb-card:hover {
+  border-color: var(--brand-red, #e11d48);
+  transform: translateY(-2px);
+}
+
+.preset-thumb-card.active {
+  border-color: var(--brand-red, #e11d48);
+  background: rgba(225, 29, 72, 0.15);
+  box-shadow: 0 0 0 1.5px var(--brand-red, #e11d48);
+}
+
+.preset-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  object-fit: cover;
+  margin-bottom: 0.25rem;
+}
+
+.preset-lbl {
+  font-size: 0.65rem;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  padding: 0 2px;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.product-thumb-img {
+  transition: transform 0.15s ease;
+}
+
+.product-thumb-img:hover {
+  transform: scale(1.05);
+}
+
+/* =========================================================
+   INVENTORY CARDS & RESPONSIVE TABLE
+   ========================================================= */
+
+.inventory-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.inventory-card-item {
+  background: var(--bg-surface, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: var(--radius-md, 10px);
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.inventory-card-item:hover {
+  border-color: rgba(225, 29, 72, 0.4);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.3));
+}
+
+.table-responsive-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-surface, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+}
+
+.pos-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.88rem;
+}
+
+.pos-table th {
+  background: var(--bg-surface-elevated, #0f172a);
+  padding: 0.75rem 0.85rem;
+  color: var(--text-secondary, #94a3b8);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color, #334155);
+  white-space: nowrap;
+}
+
+.pos-table td {
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid var(--border-color, #334155);
+  vertical-align: middle;
+}
+
+.pos-table tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+

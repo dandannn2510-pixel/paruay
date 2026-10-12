@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { CameraScannerModal } from '../components/CameraScannerModal';
+import { ProductThumbnail } from '../components/ProductThumbnail';
 import { playScanBeep, playClickSound, playCashRegisterChime } from '../utils/sound';
 
 export function StockAuditView() {
@@ -133,7 +134,7 @@ export function StockAuditView() {
                     className={`audit-pick-row ${selectedProduct?.id === p.id ? 'active' : ''}`}
                     onClick={() => handleSelectProduct(p)}
                   >
-                    <span className="text-xl mr-2">{p.image || '📦'}</span>
+                    <ProductThumbnail product={p} size={36} className="mr-2" />
                     <div className="flex-1">
                       <strong className="block">{p.name}</strong>
                       <span className="text-xs text-muted font-mono">{p.barcode || 'ไม่มีบาร์โค้ด'}</span>
@@ -159,8 +160,8 @@ export function StockAuditView() {
 
             {selectedProduct ? (
               <form onSubmit={handleConfirmAdjust} className="animate-scale-up">
-                <div className="selected-product-banner mb-3">
-                  <span className="text-2xl mr-2">{selectedProduct.image || '📦'}</span>
+                <div className="selected-product-banner mb-3 flex items-center">
+                  <ProductThumbnail product={selectedProduct} size={50} className="mr-3" />
                   <div>
                     <h4 className="font-bold">{selectedProduct.name}</h4>
                     <p className="text-xs text-muted">

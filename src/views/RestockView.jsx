@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { CameraScannerModal } from '../components/CameraScannerModal';
+import { ProductThumbnail } from '../components/ProductThumbnail';
 import { playScanBeep, playClickSound, playCashRegisterChime } from '../utils/sound';
 
 export function RestockView({ onNavigate }) {
@@ -186,7 +187,7 @@ export function RestockView({ onNavigate }) {
                         className="suggestion-item"
                         onClick={() => handleSelectProduct(p)}
                       >
-                        <span className="mr-2">{p.image || '📦'}</span>
+                        <ProductThumbnail product={p} size={32} className="mr-2" />
                         <strong className="flex-1">{p.name}</strong>
                         <span className="text-xs text-muted font-mono">{p.barcode}</span>
                         <span className="badge-tag tag-discrete ml-2">คงเหลือ {p.stock}</span>
@@ -197,8 +198,8 @@ export function RestockView({ onNavigate }) {
             </div>
 
             {selectedProduct && (
-              <div className="selected-product-banner mb-3 animate-fade-in">
-                <span className="text-2xl mr-2">{selectedProduct.image || '📦'}</span>
+              <div className="selected-product-banner mb-3 animate-fade-in flex items-center">
+                <ProductThumbnail product={selectedProduct} size={50} className="mr-3" />
                 <div>
                   <h4 className="font-bold">{selectedProduct.name}</h4>
                   <p className="text-xs text-muted">

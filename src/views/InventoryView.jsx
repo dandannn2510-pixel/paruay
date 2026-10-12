@@ -13,9 +13,13 @@ import {
   Scale,
   ArrowUpDown,
   Plus,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { BarcodeStickerModal } from '../components/BarcodeStickerModal';
+import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { ProductThumbnail } from '../components/ProductThumbnail';
 import { playClickSound } from '../utils/sound';
 
 export function InventoryView({ onNavigate }) {
@@ -24,6 +28,8 @@ export function InventoryView({ onNavigate }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'normal' | 'low' | 'out'
+  const [viewMode, setViewMode] = useState('card'); // 'card' | 'table'
+  const [isEasyAddOpen, setIsEasyAddOpen] = useState(false);
 
   // Sticker modal
   const [stickerProduct, setStickerProduct] = useState(null);
@@ -87,10 +93,14 @@ export function InventoryView({ onNavigate }) {
           </button>
           <button
             type="button"
-            className="btn btn-primary"
-            onClick={() => onNavigate('products')}
+            className="btn btn-primary font-bold shadow-sm"
+            onClick={() => {
+              playClickSound();
+              setIsEasyAddOpen(true);
+            }}
           >
-            + เพิ่มสินค้าใหม่
+            <Plus size={18} />
+            <span>+ เพิ่มสินค้าใหม่</span>
           </button>
         </div>
       </div>
@@ -131,82 +141,58 @@ export function InventoryView({ onNavigate }) {
           <option value="low">🟡 ใกล้หมด (ต่ำกว่าจุดสั่ง)</option>
           <option value="out">🔴 หมดสต็อก (0)</option>
         </select>
+
+        {/* View Mode Toggle */}
+        <div className="flex gap-1 p-1 rounded-md" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${viewMode === 'card' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => {
+              playClickSound();
+              setViewMode('card');
+            }}
+            title="มุมมองการ์ด (เหมาะกับมือถือ)"
+          >
+            <LayoutGrid size={16} />
+            <span>การ์ด</span>
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => {
+              playClickSound();
+              setViewMode('table');
+            }}
+            title="มุมมองตาราง"
+          >
+            <List size={16} />
+            <span>ตาราง</span>
+          </button>
+        </div>
       </div>
 
-      {/* Products Table */}
-      <div className="table-responsive-wrapper">
-        <table className="pos-table">
-          <thead>
-            <tr>
-              <th>สินค้า</th>
-              <th>บาร์โค้ด</th>
-              <th>ประเภท</th>
-              <th>ราคาทุน</th>
-              <th>ราคาขาย</th>
-              <th>กำไร/หน่วย</th>
-              <th>คงเหลือ</th>
-              <th>สถานะ</th>
-              <th className="text-center">การจัดการ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProducts.length === 0 ? (
-              <tr>
-                <td colSpan="9" className="text-center py-6 text-muted">
-                  ไม่พบสินค้าที่ตรงกับเงื่อนไข
-                </td>
-              </tr>
-            ) : (
-              filteredProducts.map((p) => {
-                const isOutOfStock = p.stock <= 0;
-                const isLowStock = p.stock > 0 && p.stock <= p.minStockAlert;
-                const profit = p.sellPrice - (p.costPrice || 0);
-                const marginPct = p.sellPrice > 0 ? ((profit / p.sellPrice) * 100).toFixed(0) : 0;
+      {/* Products Display (Cards or Table) */}
+      {viewMode === 'card' ? (
+        <div className="inventory-cards-grid">
+          {filteredProducts.length === 0 ? (
+            <div className="text-center py-8 text-muted col-span-full">
+              ไม่พบสินค้าที่ตรงกับเงื่อนไข
+            </div>
+          ) : (
+            filteredProducts.map((p) => {
+              const isOutOfStock = p.stock <= 0;
+              const isLowStock = p.stock > 0 && p.stock <= p.minStockAlert;
 
-                return (
-                  <tr key={p.id}>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        {p.image && (p.image.startsWith('http') || p.image.startsWith('/')) ? (
-                          <img src={p.image} alt={p.name} className="table-product-img" />
-                        ) : (
-                          <span className="table-emoji">📦</span>
-                        )}
-                        <div>
-                          <strong className="block">{p.name}</strong>
-                          <span className="text-xs text-muted">จุดเตือน: {p.minStockAlert} {p.unit}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="font-mono text-sm">{p.barcode || '-'}</span>
-                    </td>
-                    <td>
-                      {p.isWeighted ? (
-                        <span className="badge-tag tag-scale">
-                          <Scale size={12} /> ชั่ง นน.
-                        </span>
-                      ) : (
-                        <span className="badge-tag tag-discrete">{p.unit}</span>
-                      )}
-                    </td>
-                    <td>{p.costPrice ? `${p.costPrice.toFixed(2)} ฿` : '-'}</td>
-                    <td>
-                      <strong className="text-primary font-bold">
-                        {p.sellPrice.toFixed(2)} ฿
-                      </strong>
-                    </td>
-                    <td>
-                      <span className="text-success text-xs font-medium">
-                        +{profit.toFixed(2)} ฿ ({marginPct}%)
-                      </span>
-                    </td>
-                    <td>
-                      <strong className={`font-mono ${isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'}`}>
-                        {p.isWeighted ? p.stock.toFixed(3) : p.stock} {p.unit}
-                      </strong>
-                    </td>
-                    <td>
+              return (
+                <div key={p.id} className="inventory-card-item">
+                  <div className="flex items-center gap-3">
+                    <ProductThumbnail product={p} size={54} />
+                    <div className="flex-1 min-w-0">
+                      <strong className="block text-base truncate">{p.name}</strong>
+                      <span className="text-xs text-muted font-mono">{p.barcode || 'ไม่มีบาร์โค้ด'}</span>
+                      <div className="text-xs text-muted">หมวด: {categories.find((c) => c.id === p.categoryId)?.name || '-'}</div>
+                    </div>
+                    <div>
                       {isOutOfStock ? (
                         <span className="status-pill status-out">🔴 หมด</span>
                       ) : isLowStock ? (
@@ -214,53 +200,184 @@ export function InventoryView({ onNavigate }) {
                       ) : (
                         <span className="status-pill status-normal">🟢 ปกติ</span>
                       )}
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-center gap-1">
-                        {/* Quick Price Edit Button */}
-                        <button
-                          type="button"
-                          className="table-action-btn"
-                          title="ปรับราคาขายเร็ว"
-                          onClick={() => handleOpenPriceModal(p)}
-                        >
-                          <DollarSign size={16} />
-                        </button>
+                    </div>
+                  </div>
 
-                        {/* Barcode Sticker Generator */}
-                        <button
-                          type="button"
-                          className="table-action-btn"
-                          title="พิมพ์สติกเกอร์บาร์โค้ด EAN-13"
-                          onClick={() => {
-                            playClickSound();
-                            setStickerProduct(p);
-                          }}
-                        >
-                          <Printer size={16} />
-                        </button>
+                  <div className="flex items-center justify-between mt-3 pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+                    <div>
+                      <span className="text-xs text-muted block">ราคาขาย / {p.unit}:</span>
+                      <strong className="text-primary text-lg font-bold">
+                        {p.sellPrice.toFixed(2)} ฿
+                      </strong>
+                      {p.costPrice > 0 && (
+                        <span className="text-xs text-muted ml-1">(ทุน {p.costPrice.toFixed(2)})</span>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-muted block">คงเหลือในคลัง:</span>
+                      <strong className={`text-lg font-mono font-bold ${isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'}`}>
+                        {p.isWeighted ? p.stock.toFixed(3) : p.stock} {p.unit}
+                      </strong>
+                    </div>
+                  </div>
 
-                        {/* History button */}
-                        <button
-                          type="button"
-                          className="table-action-btn"
-                          title="ดูประวัติการเคลื่อนไหวสต็อก"
-                          onClick={() => {
-                            playClickSound();
-                            setViewHistoryProduct(p);
-                          }}
-                        >
-                          <History size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                  <div className="flex gap-2 mt-3 pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm flex-1"
+                      onClick={() => handleOpenPriceModal(p)}
+                    >
+                      <DollarSign size={15} />
+                      <span>ปรับราคา</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm flex-1"
+                      onClick={() => {
+                        playClickSound();
+                        setStickerProduct(p);
+                      }}
+                    >
+                      <Printer size={15} />
+                      <span>สติกเกอร์</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        playClickSound();
+                        setViewHistoryProduct(p);
+                      }}
+                      title="ดูประวัติการเคลื่อนไหวสต็อก"
+                    >
+                      <History size={15} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        <div className="table-responsive-wrapper">
+          <table className="pos-table">
+            <thead>
+              <tr>
+                <th>สินค้า</th>
+                <th>บาร์โค้ด</th>
+                <th>ประเภท</th>
+                <th>ราคาทุน</th>
+                <th>ราคาขาย</th>
+                <th>กำไร/หน่วย</th>
+                <th>คงเหลือ</th>
+                <th>สถานะ</th>
+                <th className="text-center">การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="text-center py-6 text-muted">
+                    ไม่พบสินค้าที่ตรงกับเงื่อนไข
+                  </td>
+                </tr>
+              ) : (
+                filteredProducts.map((p) => {
+                  const isOutOfStock = p.stock <= 0;
+                  const isLowStock = p.stock > 0 && p.stock <= p.minStockAlert;
+                  const profit = p.sellPrice - (p.costPrice || 0);
+                  const marginPct = p.sellPrice > 0 ? ((profit / p.sellPrice) * 100).toFixed(0) : 0;
+
+                  return (
+                    <tr key={p.id}>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <ProductThumbnail product={p} size={42} />
+                          <div>
+                            <strong className="block">{p.name}</strong>
+                            <span className="text-xs text-muted">จุดเตือน: {p.minStockAlert} {p.unit}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="font-mono text-sm">{p.barcode || '-'}</span>
+                      </td>
+                      <td>
+                        {p.isWeighted ? (
+                          <span className="badge-tag tag-scale">
+                            <Scale size={12} /> ชั่ง นน.
+                          </span>
+                        ) : (
+                          <span className="badge-tag tag-discrete">{p.unit}</span>
+                        )}
+                      </td>
+                      <td>{p.costPrice ? `${p.costPrice.toFixed(2)} ฿` : '-'}</td>
+                      <td>
+                        <strong className="text-primary font-bold">
+                          {p.sellPrice.toFixed(2)} ฿
+                        </strong>
+                      </td>
+                      <td>
+                        <span className="text-success text-xs font-medium">
+                          +{profit.toFixed(2)} ฿ ({marginPct}%)
+                        </span>
+                      </td>
+                      <td>
+                        <strong className={`font-mono ${isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'}`}>
+                          {p.isWeighted ? p.stock.toFixed(3) : p.stock} {p.unit}
+                        </strong>
+                      </td>
+                      <td>
+                        {isOutOfStock ? (
+                          <span className="status-pill status-out">🔴 หมด</span>
+                        ) : isLowStock ? (
+                          <span className="status-pill status-low">🟡 ใกล้หมด</span>
+                        ) : (
+                          <span className="status-pill status-normal">🟢 ปกติ</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            className="table-action-btn"
+                            title="ปรับราคาขายเร็ว"
+                            onClick={() => handleOpenPriceModal(p)}
+                          >
+                            <DollarSign size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action-btn"
+                            title="พิมพ์สติกเกอร์บาร์โค้ด EAN-13"
+                            onClick={() => {
+                              playClickSound();
+                              setStickerProduct(p);
+                            }}
+                          >
+                            <Printer size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action-btn"
+                            title="ดูประวัติการเคลื่อนไหวสต็อก"
+                            onClick={() => {
+                              playClickSound();
+                              setViewHistoryProduct(p);
+                            }}
+                          >
+                            <History size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Quick Price Edit Modal */}
       {editingPriceProduct && (
@@ -364,6 +481,12 @@ export function InventoryView({ onNavigate }) {
           </div>
         </div>
       )}
+
+      {/* Easy Add Product Modal */}
+      <EasyAddProductModal
+        isOpen={isEasyAddOpen}
+        onClose={() => setIsEasyAddOpen(false)}
+      />
     </div>
   );
 }

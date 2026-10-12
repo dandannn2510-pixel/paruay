@@ -16,6 +16,9 @@ import {
 import { useStore } from '../context/StoreContext';
 import { generateInStoreBarcode } from '../utils/barcode';
 import { BarcodeStickerModal } from '../components/BarcodeStickerModal';
+import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { ProductThumbnail } from '../components/ProductThumbnail';
+import { FALLBACK_IMAGE_BY_CATEGORY, PRODUCT_IMAGE_PRESETS } from '../data/productPresets';
 import { playClickSound } from '../utils/sound';
 
 export function ProductsView() {
@@ -23,6 +26,7 @@ export function ProductsView() {
 
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [isEasyAddOpen, setIsEasyAddOpen] = useState(false);
 
   // Form Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -166,14 +170,27 @@ export function ProductsView() {
             เพิ่ม, แก้ไข, ลบข้อมูลสินค้า และสร้างบาร์โค้ด EAN-13 ของสดประจำร้าน
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary btn-large font-bold"
-          onClick={handleOpenAddModal}
-        >
-          <Plus size={20} />
-          <span>เพิ่มสินค้าใหม่</span>
-        </button>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="btn btn-primary btn-large font-bold"
+            onClick={() => {
+              playClickSound();
+              setIsEasyAddOpen(true);
+            }}
+          >
+            <Plus size={20} />
+            <span>+ เพิ่มสินค้าใหม่ (ง่ายสุดๆ)</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={handleOpenAddModal}
+            title="สำหรับกรอกข้อมูลละเอียด หรือสินค้าบริการพิเศษ"
+          >
+            <span>⚙️ แบบละเอียด</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search */}
@@ -222,11 +239,7 @@ export function ProductsView() {
             {filteredProducts.map((p) => (
               <tr key={p.id}>
                 <td>
-                  {p.image && (p.image.startsWith('http') || p.image.startsWith('/')) ? (
-                    <img src={p.image} alt={p.name} className="table-product-img" />
-                  ) : (
-                    <span className="table-emoji">📦</span>
-                  )}
+                  <ProductThumbnail product={p} size={44} />
                 </td>
                 <td>
                   <strong className="block">{p.name}</strong>
@@ -490,6 +503,12 @@ export function ProductsView() {
         product={stickerProduct}
         isOpen={Boolean(stickerProduct)}
         onClose={() => setStickerProduct(null)}
+      />
+
+      {/* Easy Add Product Modal */}
+      <EasyAddProductModal
+        isOpen={isEasyAddOpen}
+        onClose={() => setIsEasyAddOpen(false)}
       />
     </div>
   );

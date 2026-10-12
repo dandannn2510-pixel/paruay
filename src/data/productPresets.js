@@ -1,0 +1,36 @@
+// Realistic product photo presets for grocery store items
+export const PRODUCT_IMAGE_PRESETS = [
+  { label: 'หมูสด/สันนอก', url: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400&q=80', cat: 'cat_fresh' },
+  { label: 'หมูบด/หมูสับ', url: 'https://images.unsplash.com/photo-1588168333986-5078d3ae3976?w=400&q=80', cat: 'cat_fresh' },
+  { label: 'ไก่สด/อกไก่', url: 'https://images.unsplash.com/photo-1604503468506-a8da13d82791?w=400&q=80', cat: 'cat_fresh' },
+  { label: 'ผักบุ้ง/ผักใบเขียว', url: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=400&q=80', cat: 'cat_veg' },
+  { label: 'กะหล่ำปลี', url: 'https://images.unsplash.com/photo-1594282486552-05b4d80fbb9f?w=400&q=80', cat: 'cat_veg' },
+  { label: 'แตงกวา', url: 'https://images.unsplash.com/photo-1449300079323-02e209d9d3a6?w=400&q=80', cat: 'cat_veg' },
+  { label: 'พริกสด', url: 'https://images.unsplash.com/photo-1588252303782-cb80119abd6d?w=400&q=80', cat: 'cat_veg' },
+  { label: 'มะนาว', url: 'https://images.unsplash.com/photo-1590502593747-42a996133562?w=400&q=80', cat: 'cat_veg' },
+  { label: 'ไข่ไก่สด', url: 'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?w=400&q=80', cat: 'cat_fresh' },
+  { label: 'ข้าวสาร', url: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&q=80', cat: 'cat_raw_bulk' },
+  { label: 'น้ำตาลทราย', url: 'https://images.unsplash.com/photo-1622484212850-cab596d629a2?w=400&q=80', cat: 'cat_dry_food' },
+  { label: 'น้ำมันพืช', url: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&q=80', cat: 'cat_dry_food' },
+  { label: 'มาม่า/บะหมี่', url: 'https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&q=80', cat: 'cat_dry_food' },
+  { label: 'น้ำดื่มขวด', url: 'https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=400&q=80', cat: 'cat_beverage' },
+  { label: 'น้ำอัดลม/โค้ก', url: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=400&q=80', cat: 'cat_beverage' },
+  { label: 'เบียร์ขวด', url: 'https://images.unsplash.com/photo-1608270102604-58525e985161?w=400&q=80', cat: 'cat_beverage' },
+  { label: 'ขนมขบเคี้ยว', url: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&q=80', cat: 'cat_snack' },
+  { label: 'ปลากระป๋อง', url: 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?w=400&q=80', cat: 'cat_dry_food' },
+  { label: 'น้ำปลา/ซอส', url: 'https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=400&q=80', cat: 'cat_dry_food' },
+  { label: 'ผงซักฟอก', url: 'https://images.unsplash.com/photo-1610557892470-55d9e80c0bce?w=400&q=80', cat: 'cat_household' },
+  { label: 'น้ำยาล้างจาน', url: 'https://images.unsplash.com/photo-1585421514738-01798e348b17?w=400&q=80', cat: 'cat_household' },
+  { label: 'ถุงหิ้ว/ทั่วไป', url: 'https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=400&q=80', cat: 'cat_service' },
+];
+
+export const FALLBACK_IMAGE_BY_CATEGORY = {
+  cat_fresh: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400&q=80',
+  cat_veg: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=400&q=80',
+  cat_raw_bulk: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&q=80',
+  cat_beverage: 'https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=400&q=80',
+  cat_dry_food: 'https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&q=80',
+  cat_snack: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&q=80',
+  cat_household: 'https://images.unsplash.com/photo-1610557892470-55d9e80c0bce?w=400&q=80',
+  cat_service: 'https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=400&q=80',
+};

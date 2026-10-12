@@ -24,6 +24,8 @@ import { CameraScannerModal } from '../components/CameraScannerModal';
 import { UnregisteredItemModal } from '../components/UnregisteredItemModal';
 import { PaymentModal } from '../components/PaymentModal';
 import { ParkedBillsModal } from '../components/ParkedBillsModal';
+import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { getProductPhotoUrl, handleImageFallback } from '../utils/imageUtils';
 import { playScanBeep, playErrorBuzz, playClickSound, playCashRegisterChime } from '../utils/sound';
 
 export function PosView({ onOpenMenu }) {
@@ -59,6 +61,7 @@ export function PosView({ onOpenMenu }) {
 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isParkedModalOpen, setIsParkedModalOpen] = useState(false);
+  const [isEasyAddOpen, setIsEasyAddOpen] = useState(false);
 
   // Cheerful checkout success toast (replaces receipt modal)
   const [checkoutSuccessToast, setCheckoutSuccessToast] = useState(null);
@@ -241,6 +244,20 @@ export function PosView({ onOpenMenu }) {
               <Camera size={19} />
               <span className="btn-text-responsive">เปิดกล้อง</span>
             </button>
+
+            {/* Quick Add Product Button */}
+            <button
+              type="button"
+              className="btn btn-primary btn-sm font-bold"
+              onClick={() => {
+                playClickSound();
+                setIsEasyAddOpen(true);
+              }}
+              title="เพิ่มสินค้าใหม่เข้าร้านทันที"
+            >
+              <Plus size={18} />
+              <span className="btn-text-responsive">+ สินค้า</span>
+            </button>
           </div>
 
           {/* Parked bills badge bar */}
@@ -316,19 +333,13 @@ export function PosView({ onOpenMenu }) {
                     onClick={() => handleProductClick(p)}
                   >
                     <div className="card-image-wrap">
-                      {p.image && (p.image.startsWith('http') || p.image.startsWith('/')) ? (
-                        <img
-                          src={p.image}
-                          alt={p.name}
-                          className="product-card-photo"
-                          loading="lazy"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="prod-emoji-avatar">📦</div>
-                      )}
+                      <img
+                        src={getProductPhotoUrl(p)}
+                        alt={p.name}
+                        className="product-card-photo"
+                        loading="lazy"
+                        onError={(e) => handleImageFallback(e, p.categoryId)}
+                      />
 
                       <div className="badge-group-overlay">
                         {isFresh && (
@@ -576,6 +587,12 @@ export function PosView({ onOpenMenu }) {
       <ParkedBillsModal
         isOpen={isParkedModalOpen}
         onClose={() => setIsParkedModalOpen(false)}
+      />
+
+      {/* 6. Easy Add Product Modal */}
+      <EasyAddProductModal
+        isOpen={isEasyAddOpen}
+        onClose={() => setIsEasyAddOpen(false)}
       />
     </div>
   );
