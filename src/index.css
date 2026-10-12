@@ -2190,13 +2190,16 @@ h1, h2, h3, h4, h5, h6 {
   justify-content: center;
 }
 
-.scanner-video-box video {
+.scanner-video-box video,
+.scanner-native-video {
   width: 100% !important;
-  height: auto !important;
+  height: 100% !important;
   max-height: 55dvh !important;
-  object-fit: contain !important;
+  object-fit: cover !important;
   display: block !important;
-  margin: 0 auto !important;
+  border-radius: 0 !important;
+  transform: none !important; /* prevent any rotation bugs */
+  background: #000;
 }
 
 /* Hide html5-qrcode's default ugly UI elements */

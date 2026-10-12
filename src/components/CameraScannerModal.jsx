@@ -1,16 +1,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from '@zxing/library';
 import {
   Camera,
   X,
   RefreshCw,
   Zap,
-  Volume2,
   CheckCircle2,
   Search,
-  Upload,
   AlertCircle,
-  HelpCircle,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { scanBarcodeFromImageFile } from '../utils/barcodeScanner';
 import { playScanBeep, playClickSound } from '../utils/sound';
@@ -18,296 +16,336 @@ import { playScanBeep, playClickSound } from '../utils/sound';
 export function CameraScannerModal({ isOpen, onClose, onDetected }) {
   if (!isOpen) return null;
 
-  const [scannerState, setScannerState] = useState('initializing'); // 'initializing' | 'scanning' | 'error'
-  const [continuousMode, setContinuousMode] = useState(true);
-  const [lastScannedCode, setLastScannedCode] = useState(null);
-  const [manualCode, setManualCode] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [cameras, setCameras] = useState([]);
-  const [currentCameraIndex, setCurrentCameraIndex] = useState(0);
-  const [torchOn, setTorchOn] = useState(false);
-  const [isTorchSupported, setIsTorchSupported] = useState(false);
-  const [isScanningFile, setIsScanningFile] = useState(false);
-
-  const scannerRef = useRef(null);
-  const containerIdRef = useRef(`qr-reader-${Date.now()}`);
-  const lastScannedRef = useRef({ code: '', time: 0 });
-  const continuousModeRef = useRef(continuousMode);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const readerRef = useRef(null);
+  const scanLoopRef = useRef(null);
   const isMountedRef = useRef(true);
+  const lastScannedRef = useRef({ code: '', time: 0 });
   const fileInputRef = useRef(null);
+  const canvasRef = useRef(null);
 
+  const [status, setStatus] = useState('starting'); // 'starting' | 'scanning' | 'error'
+  const [errorMsg, setErrorMsg] = useState('');
+  const [lastCode, setLastCode] = useState(null);
+  const [continuousMode, setContinuousMode] = useState(true);
+  const [manualCode, setManualCode] = useState('');
+  const [isScanningFile, setIsScanningFile] = useState(false);
+  const [cameras, setCameras] = useState([]);
+  const [cameraIdx, setCameraIdx] = useState(0);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+
+  const continuousModeRef = useRef(continuousMode);
   continuousModeRef.current = continuousMode;
 
-  const handleScanSuccess = useCallback(
-    (decodedText) => {
+  // ──────────────────────────────────────────────────────────────────────────
+  // STOP helpers
+  // ──────────────────────────────────────────────────────────────────────────
+  const stopScanLoop = useCallback(() => {
+    if (scanLoopRef.current) {
+      cancelAnimationFrame(scanLoopRef.current);
+      scanLoopRef.current = null;
+    }
+  }, []);
+
+  const stopStream = useCallback(() => {
+    stopScanLoop();
+    if (readerRef.current) {
+      try { readerRef.current.reset(); } catch { /* ignore */ }
+      readerRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, [stopScanLoop]);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Decode one canvas frame with ZXing
+  // ──────────────────────────────────────────────────────────────────────────
+  const decodeFrame = useCallback(async (video) => {
+    if (!video || !isMountedRef.current) return null;
+    if (video.readyState < 2) return null;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0);
+
+    // 1. Try Native BarcodeDetector (Android Chrome) — fastest
+    if ('BarcodeDetector' in window) {
+      try {
+        const bd = new window.BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'itf'],
+        });
+        const results = await bd.detect(canvas);
+        if (results.length > 0) return results[0].rawValue;
+      } catch { /* fallthrough to ZXing */ }
+    }
+
+    // 2. ZXing decode from canvas ImageData
+    try {
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.CODE_39,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+        BarcodeFormat.QR_CODE,
+        BarcodeFormat.ITF,
+        BarcodeFormat.CODE_93,
+      ]);
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      if (!readerRef.current) {
+        readerRef.current = new BrowserMultiFormatReader(hints);
+      }
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = readerRef.current.decodeFromImageData(imgData);
+      if (result) return result.getText();
+    } catch { /* NotFoundException is normal, just no barcode this frame */ }
+
+    return null;
+  }, []);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Scan loop — runs every animation frame while camera is open
+  // ──────────────────────────────────────────────────────────────────────────
+  const handleDetected = useCallback(
+    (code) => {
       const now = Date.now();
-      // Debounce same barcode within 1.4 seconds in continuous mode
-      if (
-        decodedText === lastScannedRef.current.code &&
-        now - lastScannedRef.current.time < 1400
-      ) {
-        return;
-      }
+      if (code === lastScannedRef.current.code && now - lastScannedRef.current.time < 1500) return;
+      lastScannedRef.current = { code, time: now };
 
-      lastScannedRef.current = { code: decodedText, time: now };
       playScanBeep();
+      if (navigator.vibrate) try { navigator.vibrate([60]); } catch { /* ignore */ }
 
-      if (navigator.vibrate) {
-        try {
-          navigator.vibrate([70]);
-        } catch {
-          // ignore
-        }
-      }
-
-      setLastScannedCode(decodedText);
-      onDetected(decodedText);
+      setLastCode(code);
+      onDetected(code);
 
       if (!continuousModeRef.current) {
-        setTimeout(() => {
-          onClose();
-        }, 350);
+        setTimeout(() => { if (isMountedRef.current) onClose(); }, 350);
       }
     },
     [onDetected, onClose]
   );
 
-  // Stop scanner safely
-  const stopScanner = useCallback(async () => {
-    if (scannerRef.current) {
-      try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
-        }
-        scannerRef.current.clear();
-      } catch (err) {
-        console.warn('Error stopping scanner:', err);
-      } finally {
-        scannerRef.current = null;
+  const startScanLoop = useCallback(() => {
+    stopScanLoop();
+    const loop = async () => {
+      if (!isMountedRef.current || !videoRef.current) return;
+      const code = await decodeFrame(videoRef.current);
+      if (code) handleDetected(code);
+      scanLoopRef.current = requestAnimationFrame(loop);
+    };
+    scanLoopRef.current = requestAnimationFrame(loop);
+  }, [decodeFrame, handleDetected, stopScanLoop]);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Start camera stream
+  // ──────────────────────────────────────────────────────────────────────────
+  const startCamera = useCallback(async (deviceId) => {
+    if (!isMountedRef.current) return;
+    stopStream();
+    setStatus('starting');
+    setErrorMsg('');
+    setLastCode(null);
+
+    try {
+      const constraints = {
+        video: deviceId
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (!isMountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      streamRef.current = stream;
+      const video = videoRef.current;
+      video.srcObject = stream;
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('autoplay', 'true');
+      video.muted = true;
+      await video.play();
+
+      // Check torch support
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const caps = track.getCapabilities?.() || {};
+        setTorchSupported(!!caps.torch);
+      }
+
+      if (isMountedRef.current) {
+        setStatus('scanning');
+        startScanLoop();
+      }
+    } catch (err) {
+      console.error('Camera error:', err);
+      if (!isMountedRef.current) return;
+      setStatus('error');
+      if (err.name === 'NotAllowedError' || String(err).includes('Permission')) {
+        setErrorMsg('กรุณาอนุญาตสิทธิ์กล้องในเบราว์เซอร์ แล้วลองใหม่');
+      } else if (err.name === 'NotFoundError') {
+        setErrorMsg('ไม่พบกล้องบนอุปกรณ์นี้ สามารถถ่ายรูปหรือพิมพ์รหัสได้');
+      } else if (!window.isSecureContext) {
+        setErrorMsg('ต้องเปิดผ่าน HTTPS เพื่อใช้งานกล้อง');
+      } else {
+        setErrorMsg(`เปิดกล้องไม่ได้: ${err.message || err.name}`);
       }
     }
-  }, []);
+  }, [stopStream, startScanLoop]);
 
-  // Start scanner with specific camera or default environment camera
-  const startScanner = useCallback(
-    async (cameraIdOrConfig) => {
-      const elementId = containerIdRef.current;
-      const element = document.getElementById(elementId);
-      if (!element) return;
-
-      setScannerState('initializing');
-      setErrorMessage('');
-
-      await stopScanner();
-
-      try {
-        const formatsToSupport = [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.ITF,
-        ];
-
-        const html5QrCode = new Html5Qrcode(elementId, {
-          formatsToSupport,
-          verbose: false,
-        });
-
-        scannerRef.current = html5QrCode;
-
-        // Dynamic wide rectangle box for barcodes
-        const config = {
-          fps: 20,
-          qrbox: (viewfinderWidth, viewfinderHeight) => {
-            const width = Math.min(Math.floor(viewfinderWidth * 0.88), 340);
-            const height = Math.min(
-              Math.floor(width * 0.55),
-              Math.floor(viewfinderHeight * 0.75)
-            );
-            return {
-              width: Math.max(width, 180),
-              height: Math.max(height, 90),
-            };
-          },
-          videoConstraints: {
-            facingMode: { ideal: 'environment' },
-            width: { min: 640, ideal: 1280, max: 1920 },
-            height: { min: 480, ideal: 720, max: 1080 },
-          },
-        };
-
-        await html5QrCode.start(
-          cameraIdOrConfig || { facingMode: 'environment' },
-          config,
-          handleScanSuccess,
-          () => {
-            // Frame Miss (normal, ignore)
-          }
-        );
-
-        if (isMountedRef.current) {
-          setScannerState('scanning');
-
-          // Check if torch/flashlight is supported
-          try {
-            const capabilities = html5QrCode.getRunningTrackCameraCapabilities();
-            if (capabilities && capabilities.torchFeature && capabilities.torchFeature().isSupported()) {
-              setIsTorchSupported(true);
-            }
-          } catch {
-            setIsTorchSupported(false);
-          }
-        }
-      } catch (err) {
-        console.error('Camera start failed:', err);
-        if (isMountedRef.current) {
-          setScannerState('error');
-          const isSecure = window.isSecureContext !== false;
-          if (!isSecure && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-            setErrorMessage('เบราว์เซอร์ต้องการ HTTPS เพื่อเปิดกล้อง กรุณาเปิดผ่าน https:// หรือพิมพ์รหัสบาร์โค้ด');
-          } else if (err?.name === 'NotAllowedError' || String(err).includes('Permission')) {
-            setErrorMessage('ไม่อนุญาตสิทธิ์การใช้งานกล้อง กรุณาอนุญาตสิทธิ์กล้องในเบราว์เซอร์');
-          } else if (err?.name === 'NotFoundError' || String(err).includes('device')) {
-            setErrorMessage('ไม่พบอุปกรณ์กล้องบนอุปกรณ์นี้ สามารถพิมพ์รหัสหรือถ่ายรูปเพื่อสแกนได้');
-          } else {
-            setErrorMessage(`ไม่สามารถเปิดกล้องได้ (${err.message || 'โปรดตรวจสอบกล้อง'}) สามารถพิมพ์รหัสหรือถ่ายรูปได้`);
-          }
-        }
-      }
-    },
-    [handleScanSuccess, stopScanner]
-  );
-
-  // Initialize camera and get camera list on mount
+  // ──────────────────────────────────────────────────────────────────────────
+  // Mount / unmount
+  // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     isMountedRef.current = true;
     lastScannedRef.current = { code: '', time: 0 };
-    setLastScannedCode(null);
 
     const init = async () => {
-      // Delay slightly to let React render the DOM element
-      await new Promise((r) => setTimeout(r, 80));
-      if (!isMountedRef.current) return;
-
+      // Enumerate cameras
       try {
-        const devices = await Html5Qrcode.getCameras();
-        if (isMountedRef.current && devices && devices.length > 0) {
-          setCameras(devices);
-          // Find back camera if available
-          const backCamIdx = devices.findIndex((d) =>
-            /back|rear|environment|0/i.test(d.label)
+        // Request permission first so labels are populated
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        tempStream.getTracks().forEach((t) => t.stop());
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter((d) => d.kind === 'videoinput');
+        if (cams.length > 0) {
+          setCameras(cams);
+          // Prefer back/environment camera
+          const backIdx = cams.findIndex((c) =>
+            /back|rear|environment/i.test(c.label) || cams.indexOf(c) === cams.length - 1
           );
-          const selectedIdx = backCamIdx !== -1 ? backCamIdx : 0;
-          setCurrentCameraIndex(selectedIdx);
-          await startScanner(devices[selectedIdx].id);
+          const idx = backIdx >= 0 ? backIdx : cams.length - 1;
+          setCameraIdx(idx);
+          await startCamera(cams[idx].deviceId);
           return;
         }
-      } catch (deviceErr) {
-        console.warn('Could not enumerate cameras, falling back to facingMode:', deviceErr);
-      }
-
-      // Fallback to standard environment facing mode
-      if (isMountedRef.current) {
-        await startScanner({ facingMode: 'environment' });
-      }
+      } catch { /* fallthrough */ }
+      await startCamera(null); // fallback facingMode
     };
 
     init();
 
     return () => {
       isMountedRef.current = false;
-      stopScanner();
+      stopStream();
     };
-  }, [startScanner, stopScanner]);
+  }, []); // only on mount
 
-  // Switch to next camera
+  // ──────────────────────────────────────────────────────────────────────────
+  // Switch camera
+  // ──────────────────────────────────────────────────────────────────────────
   const handleSwitchCamera = async () => {
     playClickSound();
-    if (cameras.length <= 1) {
-      // If no list, toggle between environment and user
-      const nextFacing = currentCameraIndex === 0 ? 'user' : 'environment';
-      setCurrentCameraIndex(currentCameraIndex === 0 ? 1 : 0);
-      await startScanner({ facingMode: nextFacing });
-      return;
+    if (cameras.length > 1) {
+      const nextIdx = (cameraIdx + 1) % cameras.length;
+      setCameraIdx(nextIdx);
+      await startCamera(cameras[nextIdx].deviceId);
+    } else {
+      // toggle front/back by facingMode
+      const stream = streamRef.current;
+      const track = stream?.getVideoTracks()[0];
+      const settings = track?.getSettings?.() || {};
+      const isFront = settings.facingMode === 'user';
+      await startCamera(null); // restart with opposite
     }
-    const nextIdx = (currentCameraIndex + 1) % cameras.length;
-    setCurrentCameraIndex(nextIdx);
-    await startScanner(cameras[nextIdx].id);
   };
 
-  // Toggle Torch/Flashlight
+  // ──────────────────────────────────────────────────────────────────────────
+  // Torch toggle
+  // ──────────────────────────────────────────────────────────────────────────
   const handleToggleTorch = async () => {
     playClickSound();
-    if (scannerRef.current) {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (track && track.applyConstraints) {
       try {
-        const capabilities = scannerRef.current.getRunningTrackCameraCapabilities();
-        if (capabilities?.torchFeature) {
-          const nextState = !torchOn;
-          await capabilities.torchFeature().apply(nextState);
-          setTorchOn(nextState);
-        }
+        await track.applyConstraints({ advanced: [{ torch: !torchOn }] });
+        setTorchOn((prev) => !prev);
       } catch (err) {
-        console.warn('Torch toggle failed', err);
+        console.warn('Torch failed:', err);
       }
     }
   };
 
-  // Scan from photo / snap file using multi-angle scanner
+  // ──────────────────────────────────────────────────────────────────────────
+  // Photo scan (file input)
+  // ──────────────────────────────────────────────────────────────────────────
   const handleFileScan = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsScanningFile(true);
     playClickSound();
-
     try {
-      const decodedText = await scanBarcodeFromImageFile(file);
-      if (decodedText) {
-        handleScanSuccess(decodedText);
+      const code = await scanBarcodeFromImageFile(file);
+      if (code) {
+        handleDetected(code);
+      } else {
+        alert('ไม่พบบาร์โค้ดในรูปภาพ กรุณาถ่ายให้บาร์โค้ดชัดเจนและอยู่ตรงกลางภาพ');
       }
     } catch (err) {
-      console.warn('File barcode scan failed', err);
-      alert('ไม่พบบาร์โค้ดในรูปภาพที่เลือก กรุณาลองถ่ายใหม่อีกครั้ง หรือพิมพ์รหัสบาร์โค้ด');
+      console.warn('File scan error:', err);
+      alert('ไม่พบบาร์โค้ดในรูปภาพ กรุณาถ่ายใหม่ให้บาร์โค้ดชัดเจน');
     } finally {
       setIsScanningFile(false);
       if (e.target) e.target.value = '';
     }
   };
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Close
+  // ──────────────────────────────────────────────────────────────────────────
   const handleClose = () => {
     playClickSound();
+    stopStream();
     onClose();
-    stopScanner();
   };
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Manual input
+  // ──────────────────────────────────────────────────────────────────────────
   const handleManualSubmit = (e) => {
     e.preventDefault();
-    if (!manualCode.trim()) return;
+    const code = manualCode.trim();
+    if (!code) return;
     playScanBeep();
-    onDetected(manualCode.trim());
+    onDetected(code);
     setManualCode('');
     if (!continuousMode) handleClose();
   };
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Render
+  // ──────────────────────────────────────────────────────────────────────────
   return (
     <div className="modal-overlay" onClick={handleClose}>
       <div
         className="modal-content scanner-modal animate-scale-up"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Header */}
+        {/* Header */}
         <div className="modal-header">
           <div className="header-info">
             <Camera className="text-primary" size={24} />
             <div>
               <h3 className="modal-title">สแกนบาร์โค้ดด้วยกล้อง</h3>
               <p className="modal-subtitle">
-                {scannerState === 'scanning'
+                {status === 'scanning'
                   ? 'หันกล้องไปที่บาร์โค้ด หรือคิวอาร์โค้ด'
+                  : status === 'error'
+                  ? 'ไม่สามารถเปิดกล้องได้'
                   : 'กำลังเชื่อมต่อกล้อง...'}
               </p>
             </div>
@@ -317,96 +355,101 @@ export function CameraScannerModal({ isOpen, onClose, onDetected }) {
           </button>
         </div>
 
-        {/* Viewport Area */}
+        {/* Camera Viewport */}
         <div className="scanner-container">
-          {/* html5-qrcode target box */}
-          <div id={containerIdRef.current} className="scanner-video-box"></div>
+          {/* Hidden offscreen canvas for ZXing */}
+          <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-          {/* Aim Overlay with Laser Line */}
-          {scannerState === 'scanning' && (
+          {/* Video element — we control it directly */}
+          <video
+            ref={videoRef}
+            className="scanner-native-video"
+            playsInline
+            muted
+            autoPlay
+          />
+
+          {/* Scan aim overlay */}
+          {status === 'scanning' && (
             <div className="scan-aim-overlay">
-              <div className="laser-line"></div>
-              <div className="aim-corner top-left"></div>
-              <div className="aim-corner top-right"></div>
-              <div className="aim-corner bottom-left"></div>
-              <div className="aim-corner bottom-right"></div>
+              <div className="laser-line" />
+              <div className="aim-corner top-left" />
+              <div className="aim-corner top-right" />
+              <div className="aim-corner bottom-left" />
+              <div className="aim-corner bottom-right" />
               <span className="scan-guide-text">วางบาร์โค้ดให้อยู่ในกรอบ</span>
             </div>
           )}
 
-          {/* Initializing Spinner */}
-          {scannerState === 'initializing' && (
+          {/* Starting spinner */}
+          {status === 'starting' && (
             <div className="scanner-loading-overlay">
               <RefreshCw className="animate-spin text-primary mb-2" size={32} />
               <p className="text-sm font-medium">กำลังเปิดกล้อง...</p>
             </div>
           )}
 
-          {/* Error Banner */}
-          {scannerState === 'error' && (
+          {/* Error */}
+          {status === 'error' && (
             <div className="scanner-error-overlay">
               <AlertCircle size={36} className="text-danger mb-2" />
-              <h4 className="font-bold text-danger text-base">ไม่สามารถใช้งานกล้องสดได้</h4>
-              <p className="text-xs text-muted max-w-xs text-center mt-1 mb-3">
-                {errorMessage}
-              </p>
+              <h4 className="font-bold text-danger text-base">เปิดกล้องไม่ได้</h4>
+              <p className="text-xs text-muted max-w-xs text-center mt-1 mb-3">{errorMsg}</p>
               <div className="flex gap-2">
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  onClick={() => startScanner({ facingMode: 'environment' })}
+                  onClick={() => startCamera(cameras[cameraIdx]?.deviceId ?? null)}
                 >
-                  <RefreshCw size={14} /> ลองเปิดกล้องอีกครั้ง
+                  <RefreshCw size={14} /> ลองใหม่
                 </button>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <Camera size={14} /> ถ่ายภาพนิ่งแทน
+                  <Camera size={14} /> ถ่ายรูปแทน
                 </button>
               </div>
             </div>
           )}
 
-          {/* Scanned Success Badge */}
-          {lastScannedCode && (
+          {/* Success toast */}
+          {lastCode && (
             <div className="scanned-feedback-toast animate-slide-up">
               <CheckCircle2 size={18} className="text-success" />
               <span>
-                ยิงติด: <strong className="font-mono">{lastScannedCode}</strong>
+                ยิงติด: <strong className="font-mono">{lastCode}</strong>
               </span>
             </div>
           )}
         </div>
 
-        {/* Action Toolbar: Switch camera, Flash, Snap Photo */}
+        {/* Action toolbar */}
         <div className="scanner-action-toolbar">
           {cameras.length > 1 && (
             <button
               type="button"
               className="btn btn-secondary btn-sm flex-1"
               onClick={handleSwitchCamera}
-              title="สลับเลนส์กล้อง (หน้า/หลัง/มุมกว้าง)"
             >
               <RefreshCw size={15} />
-              <span>สลับกล้อง ({currentCameraIndex + 1}/{cameras.length})</span>
+              <span>สลับกล้อง ({cameraIdx + 1}/{cameras.length})</span>
             </button>
           )}
 
-          {isTorchSupported && (
+          {torchSupported && (
             <button
               type="button"
               className={`btn btn-sm ${torchOn ? 'btn-accent' : 'btn-secondary'}`}
               onClick={handleToggleTorch}
-              title="เปิดไฟฉายช่วยส่องบาร์โค้ด"
             >
               <Zap size={15} />
               <span>{torchOn ? 'ปิดไฟ' : 'เปิดไฟ'}</span>
             </button>
           )}
 
-          {/* Hidden File Input for Native Camera Snap */}
+          {/* Hidden file input — triggers native camera on mobile */}
           <input
             ref={fileInputRef}
             type="file"
@@ -420,14 +463,13 @@ export function CameraScannerModal({ isOpen, onClose, onDetected }) {
             className="btn btn-outline-primary btn-sm flex-1"
             onClick={() => fileInputRef.current?.click()}
             disabled={isScanningFile}
-            title="ถ่ายรูปบาร์โค้ดด้วยกล้องมือถือโดยตรง ชัดและโฟกัสง่าย 100%"
           >
-            <Upload size={15} />
+            <ImageIcon size={15} />
             <span>{isScanningFile ? 'กำลังวิเคราะห์...' : '📸 ถ่ายรูป/เลือกภาพสแกน'}</span>
           </button>
         </div>
 
-        {/* Continuous Mode Toggle */}
+        {/* Continuous mode toggle */}
         <div className="scanner-controls">
           <label className="toggle-switch-label">
             <input
@@ -438,12 +480,12 @@ export function CameraScannerModal({ isOpen, onClose, onDetected }) {
                 setContinuousMode(e.target.checked);
               }}
             />
-            <span className="toggle-slider"></span>
+            <span className="toggle-slider" />
             <span className="toggle-text">ยิงต่อเนื่องหลายชิ้น (ไม่ต้องกดเปิดกล้องใหม่)</span>
           </label>
         </div>
 
-        {/* Manual Barcode Input Fallback */}
+        {/* Manual barcode input */}
         <form onSubmit={handleManualSubmit} className="manual-barcode-form">
           <div className="search-input-wrapper">
             <Search size={18} className="input-icon" />
