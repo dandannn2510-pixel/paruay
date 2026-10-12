@@ -2160,4 +2160,185 @@ h1, h2, h3, h4, h5, h6 {
   background: rgba(255, 255, 255, 0.03);
 }
 
+/* =========================================================
+   CAMERA SCANNER MODAL & AIM OVERLAYS
+   ========================================================= */
+
+.scanner-modal {
+  max-width: 480px;
+  overflow: hidden;
+}
+
+.scanner-container {
+  position: relative;
+  width: 100%;
+  min-height: 280px;
+  max-height: 380px;
+  background: #000000;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scanner-video-box {
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  background: #000000;
+}
+
+.scanner-video-box video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+/* Hide html5-qrcode's default ugly UI elements */
+.scanner-video-box img[alt="Info icon"],
+.scanner-video-box #html5-qrcode-anchor-scan-type-change {
+  display: none !important;
+}
+
+.scan-aim-overlay {
+  position: absolute;
+  inset: 16% 10%;
+  pointer-events: none;
+  border: 1.5px dashed rgba(255, 255, 255, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+}
+
+.laser-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #e11d48, #f43f5e, #fb7185, transparent);
+  box-shadow: 0 0 12px #e11d48;
+  animation: laserScan 2s ease-in-out infinite alternate;
+}
+
+@keyframes laserScan {
+  0% { top: 5%; }
+  100% { top: 95%; }
+}
+
+.aim-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: #e11d48;
+  border-style: solid;
+}
+
+.aim-corner.top-left {
+  top: -2px;
+  left: -2px;
+  border-width: 4px 0 0 4px;
+  border-top-left-radius: 8px;
+}
+
+.aim-corner.top-right {
+  top: -2px;
+  right: -2px;
+  border-width: 4px 4px 0 0;
+  border-top-right-radius: 8px;
+}
+
+.aim-corner.bottom-left {
+  bottom: -2px;
+  left: -2px;
+  border-width: 0 0 4px 4px;
+  border-bottom-left-radius: 8px;
+}
+
+.aim-corner.bottom-right {
+  bottom: -2px;
+  right: -2px;
+  border-width: 0 4px 4px 0;
+  border-bottom-right-radius: 8px;
+}
+
+.scan-guide-text {
+  position: absolute;
+  bottom: -26px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.scanner-loading-overlay,
+.scanner-error-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 10;
+}
+
+.scanned-feedback-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(16, 185, 129, 0.95);
+  color: #ffffff;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-full, 9999px);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+}
+
+.scanner-action-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.65rem 0;
+  align-items: center;
+}
+
+.scanner-controls {
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.toggle-switch-label {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch-label input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand-red, #e11d48);
+}
+
+.toggle-text {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.manual-barcode-form {
+  margin-top: 0.5rem;
+}
+
+
 
