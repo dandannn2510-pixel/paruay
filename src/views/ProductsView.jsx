@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Package,
   Plus,
@@ -12,14 +12,18 @@ import {
   X,
   Scale,
   RefreshCw,
+  Camera,
+  Upload,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { generateInStoreBarcode } from '../utils/barcode';
+import { scanBarcodeFromImageFile } from '../utils/barcodeScanner';
 import { BarcodeStickerModal } from '../components/BarcodeStickerModal';
 import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { CameraScannerModal } from '../components/CameraScannerModal';
 import { ProductThumbnail } from '../components/ProductThumbnail';
 import { FALLBACK_IMAGE_BY_CATEGORY, PRODUCT_IMAGE_PRESETS } from '../data/productPresets';
-import { playClickSound } from '../utils/sound';
+import { playClickSound, playScanBeep } from '../utils/sound';
 
 export function ProductsView() {
   const { products, categories, addProduct, updateProduct, deleteProduct } = useStore();
@@ -48,6 +52,32 @@ export function ProductsView() {
   const [expiryDaysAlert, setExpiryDaysAlert] = useState('3');
   const [barcode, setBarcode] = useState('');
   const [imageEmoji, setImageEmoji] = useState('📦');
+
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [isScanningBarcodePhoto, setIsScanningBarcodePhoto] = useState(false);
+  const barcodeFileInputRef = useRef(null);
+
+  const handleBarcodePhotoSnap = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsScanningBarcodePhoto(true);
+    playClickSound();
+
+    try {
+      const code = await scanBarcodeFromImageFile(file);
+      if (code) {
+        playScanBeep();
+        setBarcode(code);
+      }
+    } catch (err) {
+      console.warn('Barcode photo scan failed:', err);
+      alert('ไม่พบบาร์โค้ดในรูปภาพที่ถ่าย กรุณาถือกล้องให้นิ่งและให้บาร์โค้ดชัดเจน แล้วลองอีกครั้ง');
+    } finally {
+      setIsScanningBarcodePhoto(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
   const handleOpenAddModal = () => {
     playClickSound();
@@ -460,7 +490,46 @@ export function ProductsView() {
 
               {/* Barcode Field + Auto Generate button */}
               <div className="form-group">
-                <label className="form-label">รหัสบาร์โค้ด (EAN-13 / อื่นๆ):</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="form-label mb-0">รหัสบาร์โค้ด (EAN-13 / อื่นๆ):</label>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm text-xs font-bold"
+                      onClick={() => {
+                        playClickSound();
+                        barcodeFileInputRef.current?.click();
+                      }}
+                      disabled={isScanningBarcodePhoto}
+                      title="ถ่ายรูปบาร์โค้ดจากกล้องมือถือ เพื่อดึงตัวเลขมาใส่ให้อัตโนมัติ"
+                    >
+                      <Camera size={14} />
+                      <span>{isScanningBarcodePhoto ? 'กำลังอ่าน...' : '📸 ถ่ายรูปบาร์โค้ด'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm text-xs"
+                      onClick={() => {
+                        playClickSound();
+                        setIsBarcodeScannerOpen(true);
+                      }}
+                      title="เปิดกล้องสแกนสด"
+                    >
+                      <Barcode size={14} />
+                      <span>กล้องสแกนสด</span>
+                    </button>
+                  </div>
+                </div>
+
+                <input
+                  ref={barcodeFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={handleBarcodePhotoSnap}
+                />
+
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -480,7 +549,7 @@ export function ProductsView() {
                   </button>
                 </div>
                 <p className="text-xs text-muted mt-1">
-                  💡 รหัสที่ขึ้นต้นด้วยเลข 2 ถูกออกแบบมาสำหรับของสดและแบ่งขายภายในร้าน ไม่ชนกับสินค้าผู้ผลิต
+                  💡 แตะ <strong>"📸 ถ่ายรูปบาร์โค้ด"</strong> เพื่อถ่ายภาพบาร์โค้ดบนสินค้า ระบบจะดึงรหัสมาใส่ให้ทันที ไม่ต้องพิมพ์เอง
                 </p>
               </div>
 
@@ -509,6 +578,16 @@ export function ProductsView() {
       <EasyAddProductModal
         isOpen={isEasyAddOpen}
         onClose={() => setIsEasyAddOpen(false)}
+      />
+
+      {/* Camera Live Scanner Modal */}
+      <CameraScannerModal
+        isOpen={isBarcodeScannerOpen}
+        onClose={() => setIsBarcodeScannerOpen(false)}
+        onDetected={(code) => {
+          setBarcode(code);
+          setIsBarcodeScannerOpen(false);
+        }}
       />
     </div>
   );
