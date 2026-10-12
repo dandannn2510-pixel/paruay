@@ -11,12 +11,19 @@ import {
   RotateCcw,
   Upload,
   Image,
+  Cloud,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { playClickSound, playCashRegisterChime } from '../utils/sound';
 
 export function SettingsView() {
-  const { settings, setSettings } = useStore();
+  const {
+    settings,
+    setSettings,
+    isCloudConnected,
+    connectSupabase,
+    disconnectSupabase,
+  } = useStore();
 
   const [shopName, setShopName] = useState(settings.shopName || 'พารวย');
   const [shopTagline, setShopTagline] = useState(settings.shopTagline || 'ร้านนี้ดี ค้าขาย ร่ำรวย');
@@ -24,6 +31,26 @@ export function SettingsView() {
   const [permanentQrImage, setPermanentQrImage] = useState(settings.permanentQrImage || '/qr-promptpay.png');
   const [adminPin, setAdminPin] = useState(settings.adminPin || '1234');
   const [soundEnabled, setSoundEnabled] = useState(settings.soundEnabled ?? true);
+
+  // Cloud Supabase State
+  const [cloudUrl, setCloudUrl] = useState(localStorage.getItem('paruay_supabase_url') || '');
+  const [cloudKey, setCloudKey] = useState(localStorage.getItem('paruay_supabase_anon_key') || '');
+  const [cloudError, setCloudError] = useState('');
+  const [isConnectingCloud, setIsConnectingCloud] = useState(false);
+
+  const handleConnectCloud = async () => {
+    if (!cloudUrl.trim() || !cloudKey.trim()) {
+      setCloudError('กรุณากรอกทั้ง Project URL และ Anon Key');
+      return;
+    }
+    setCloudError('');
+    setIsConnectingCloud(true);
+    const res = await connectSupabase(cloudUrl.trim(), cloudKey.trim());
+    setIsConnectingCloud(false);
+    if (!res.success) {
+      setCloudError('เชื่อมต่อไม่สำเร็จ: ' + res.message);
+    }
+  };
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const fileInputRef = useRef(null);
@@ -227,15 +254,82 @@ export function SettingsView() {
           </div>
         </div>
 
-        {/* Card 4: Reset & Local Storage */}
+        {/* Card 4: Supabase Multi-Device Cloud Database */}
+        <div className="pos-card-box">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="card-box-title mb-0">
+              <Cloud size={20} className="text-accent" />
+              <span>เชื่อมต่อฐานข้อมูลคลาวด์ (ใช้งานหลายเครื่อง)</span>
+            </h3>
+            {isCloudConnected ? (
+              <span className="status-pill status-normal">🟢 เชื่อมต่อคลาวด์แล้ว</span>
+            ) : (
+              <span className="status-pill status-low">⚪ ใช้งานแบบเครื่องเดียว</span>
+            )}
+          </div>
+
+          <p className="text-xs text-muted mb-3">
+            เชื่อมต่อกับ <strong>Supabase</strong> เพื่อให้โทรศัพท์ทุกเครื่องในร้านตัดสต็อกและบันทึกยอดขายพร้อมกันแบบ Real-time
+          </p>
+
+          <div className="form-group">
+            <label className="form-label">Project URL (Supabase):</label>
+            <input
+              type="text"
+              className="form-control font-mono text-xs"
+              placeholder="https://your-project.supabase.co"
+              value={cloudUrl}
+              onChange={(e) => setCloudUrl(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Anon Public API Key:</label>
+            <input
+              type="password"
+              className="form-control font-mono text-xs"
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              value={cloudKey}
+              onChange={(e) => setCloudKey(e.target.value)}
+            />
+          </div>
+
+          {cloudError && <div className="text-danger text-xs mb-2">{cloudError}</div>}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn btn-primary flex-1 btn-sm font-bold"
+              disabled={isConnectingCloud}
+              onClick={handleConnectCloud}
+            >
+              {isConnectingCloud ? 'กำลังตรวจสอบ...' : isCloudConnected ? 'อัปเดตการเชื่อมต่อ' : 'ทดสอบและเชื่อมต่อคลาวด์'}
+            </button>
+            {isCloudConnected && (
+              <button
+                type="button"
+                className="btn btn-outline-danger btn-sm"
+                onClick={disconnectSupabase}
+              >
+                ยกเลิกการเชื่อมต่อ
+              </button>
+            )}
+          </div>
+
+          <div className="mt-3 p-2 bg-card rounded text-xs text-muted">
+            📄 มีไฟล์ตารางฐานข้อมูล <strong>supabase_schema.sql</strong> เตรียมไว้ให้ในโปรเจกต์ นำไปรันใน Supabase SQL Editor ได้ทันที
+          </div>
+        </div>
+
+        {/* Card 5: Reset & Local Storage */}
         <div className="pos-card-box">
           <h3 className="card-box-title">
             <Database size={20} className="text-info" />
-            <span>จัดการฐานข้อมูล</span>
+            <span>จัดการข้อมูลในเครื่อง</span>
           </h3>
 
           <p className="text-sm text-muted mb-4">
-            ข้อมูลทั้งหมดถูกบันทึกในอุปกรณ์นี้แบบ Local-first สามารถใช้งานต่อได้แม้ออฟไลน์
+            ข้อมูลทั้งหมดถูกบันทึกสำรองในอุปกรณ์นี้แบบ Local-first สามารถขายต่อได้แม้ออฟไลน์
           </p>
 
           <button
@@ -244,7 +338,7 @@ export function SettingsView() {
             onClick={handleResetData}
           >
             <RotateCcw size={16} />
-            <span>รีเซ็ตข้อมูลเริ่มต้น (โหลดสินค้าตัวอย่างพร้อมรูปภาพจริง)</span>
+            <span>รีเซ็ตข้อมูลเริ่มต้น (โหลดสินค้าตัวอย่างใหม่)</span>
           </button>
         </div>
 

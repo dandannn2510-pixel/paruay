@@ -1,11 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { INITIAL_CATEGORIES, INITIAL_PRODUCTS, INITIAL_SETTINGS, INITIAL_SUPPLIERS } from '../data/initialData';
 import { playScanBeep, playErrorBuzz, playCashRegisterChime } from '../utils/sound';
+import { getSupabaseClient, testSupabaseConnection } from '../utils/supabase';
 
 const StoreContext = createContext(null);
 
 export function StoreProvider({ children }) {
-  // LocalStorage keys
   const LS_PREFIX = 'paruay_pos_';
 
   // 1. Products
@@ -14,7 +14,6 @@ export function StoreProvider({ children }) {
       const saved = localStorage.getItem(LS_PREFIX + 'products');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // If saved products still have emojis as image, upgrade with realistic photos
         if (parsed.length > 0 && (!parsed[0].image || !parsed[0].image.startsWith('http'))) {
           return INITIAL_PRODUCTS;
         }
@@ -70,10 +69,9 @@ export function StoreProvider({ children }) {
     try {
       const saved = localStorage.getItem(LS_PREFIX + 'active_shift');
       if (saved) return JSON.parse(saved);
-      // Auto-create initial default shift
-      const initialShift = {
+      return {
         id: 'shift_' + Date.now(),
-        cashierName: 'เจ้าของร้าน / แอดมิน',
+        cashierName: 'เจ้าของร้าน',
         openedAt: new Date().toISOString(),
         startCash: 1000,
         status: 'open',
@@ -82,7 +80,6 @@ export function StoreProvider({ children }) {
         promptpaySales: 0,
         billCount: 0,
       };
-      return initialShift;
     } catch {
       return null;
     }
@@ -138,6 +135,11 @@ export function StoreProvider({ children }) {
     }
   });
 
+  // Cloud Sync State
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState('offline'); // 'offline' | 'connected' | 'syncing'
+  const isSyncingRef = useRef(false);
+
   // Sync state to LocalStorage
   useEffect(() => {
     localStorage.setItem(LS_PREFIX + 'products', JSON.stringify(products));
@@ -171,19 +173,166 @@ export function StoreProvider({ children }) {
     localStorage.setItem(LS_PREFIX + 'stock_movements', JSON.stringify(stockMovements));
   }, [stockMovements]);
 
+  // ---------- CLOUD SYNC & REALTIME SUBSCRIPTION ----------
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'price_history', JSON.stringify(priceHistory));
-  }, [priceHistory]);
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setIsCloudConnected(false);
+      setCloudSyncStatus('offline');
+      return;
+    }
+
+    let isMounted = true;
+
+    async function initCloud() {
+      try {
+        setCloudSyncStatus('syncing');
+        // Fetch products from cloud
+        const { data: cloudProds, error } = await supabase.from('products').select('*');
+        if (error) {
+          console.warn('Cloud fetch warning:', error.message);
+          setCloudSyncStatus('offline');
+          return;
+        }
+
+        if (isMounted) {
+          setIsCloudConnected(true);
+          setCloudSyncStatus('connected');
+
+          if (cloudProds && cloudProds.length > 0) {
+            // Map db snake_case to frontend camelCase
+            const mapped = cloudProds.map((cp) => ({
+              id: cp.id,
+              name: cp.name,
+              type: cp.type || 'packaged',
+              categoryId: cp.category_id,
+              costPrice: parseFloat(cp.cost_price) || 0,
+              sellPrice: parseFloat(cp.sell_price) || 0,
+              unit: cp.unit,
+              isWeighted: Boolean(cp.is_weighted),
+              minStockAlert: parseFloat(cp.min_stock_alert) || 0,
+              stock: parseFloat(cp.stock) || 0,
+              barcode: cp.barcode,
+              image: cp.image,
+              active: cp.active !== false,
+            }));
+            setProducts(mapped);
+          } else {
+            // Auto-seed Supabase with initial realistic products
+            console.log('Seeding initial products to Supabase...');
+            const seedRows = INITIAL_PRODUCTS.map((p) => ({
+              id: p.id,
+              name: p.name,
+              type: p.type,
+              category_id: p.categoryId,
+              cost_price: p.costPrice,
+              sell_price: p.sellPrice,
+              unit: p.unit,
+              is_weighted: p.isWeighted,
+              min_stock_alert: p.minStockAlert,
+              stock: p.stock,
+              barcode: p.barcode,
+              image: p.image,
+              active: true,
+            }));
+            await supabase.from('products').insert(seedRows);
+          }
+        }
+      } catch (err) {
+        console.error('Cloud init error:', err);
+        setCloudSyncStatus('offline');
+      }
+    }
+
+    initCloud();
+
+    // Subscribe to Realtime product stock changes across all devices!
+    const channel = supabase
+      .channel('public:products')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        (payload) => {
+          if (!isMounted) return;
+          console.log('Realtime product change from another device:', payload);
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const updated = payload.new;
+            setProducts((prev) =>
+              prev.map((p) =>
+                p.id === updated.id
+                  ? {
+                      ...p,
+                      name: updated.name,
+                      sellPrice: parseFloat(updated.sell_price),
+                      costPrice: parseFloat(updated.cost_price),
+                      stock: parseFloat(updated.stock),
+                    }
+                  : p
+              )
+            );
+          } else if (payload.eventType === 'INSERT' && payload.new) {
+            const n = payload.new;
+            setProducts((prev) => {
+              if (prev.some((p) => p.id === n.id)) return prev;
+              return [
+                {
+                  id: n.id,
+                  name: n.name,
+                  type: n.type,
+                  categoryId: n.category_id,
+                  costPrice: parseFloat(n.cost_price),
+                  sellPrice: parseFloat(n.sell_price),
+                  unit: n.unit,
+                  isWeighted: Boolean(n.is_weighted),
+                  minStockAlert: parseFloat(n.min_stock_alert),
+                  stock: parseFloat(n.stock),
+                  barcode: n.barcode,
+                  image: n.image,
+                  active: n.active !== false,
+                },
+                ...prev,
+              ];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  /**
+   * Connect to Supabase Cloud Database
+   */
+  const connectSupabase = async (url, key) => {
+    const test = await testSupabaseConnection(url, key);
+    if (!test.success) {
+      return { success: false, message: test.message };
+    }
+    localStorage.setItem('paruay_supabase_url', url);
+    localStorage.setItem('paruay_supabase_anon_key', key);
+    setIsCloudConnected(true);
+    setCloudSyncStatus('connected');
+    window.location.reload();
+    return { success: true };
+  };
+
+  /**
+   * Disconnect from Cloud Database
+   */
+  const disconnectSupabase = () => {
+    localStorage.removeItem('paruay_supabase_url');
+    localStorage.removeItem('paruay_supabase_anon_key');
+    setIsCloudConnected(false);
+    setCloudSyncStatus('offline');
+    window.location.reload();
+  };
 
   // ---------- CART OPERATIONS ----------
 
-  /**
-   * Add a product to current cart
-   * Supports:
-   * - standard discrete items (qty += 1)
-   * - fresh/meat weighted items (custom weightInKg or custom price converted to weightInKg)
-   * - unregistered on-the-fly items
-   */
   const addToCart = (product, options = {}) => {
     const {
       weightInKg = null,
@@ -221,16 +370,12 @@ export function StoreProvider({ children }) {
         let finalSubtotal = 0;
 
         if (priceTarget !== null && priceTarget !== undefined && priceTarget > 0) {
-          // MODE B: Specified target price (e.g. 50฿) -> calculate weight
-          // weight = price / (price/kg)
           finalSubtotal = Number(priceTarget);
           finalWeight = Number((finalSubtotal / product.sellPrice).toFixed(3));
         } else if (weightInKg !== null && weightInKg !== undefined && weightInKg > 0) {
-          // MODE A: Specified weight in kg -> calculate price
           finalWeight = Number(Number(weightInKg).toFixed(3));
           finalSubtotal = Number((finalWeight * product.sellPrice).toFixed(2));
         } else {
-          // Default 1 kg if not specified
           finalWeight = 1.0;
           finalSubtotal = product.sellPrice;
         }
@@ -241,7 +386,7 @@ export function StoreProvider({ children }) {
           name: product.name,
           sellPrice: product.sellPrice,
           costPrice: product.costPrice || 0,
-          qty: finalWeight, // Represented as weight
+          qty: finalWeight,
           weightInKg: finalWeight,
           unit: product.unit || 'กก.',
           isWeighted: true,
@@ -255,13 +400,12 @@ export function StoreProvider({ children }) {
         return [...prevCart, weightedItem];
       }
 
-      // 3. Standard packaged item (นับชิ้น)
+      // 3. Packaged item
       const existingIndex = prevCart.findIndex(
         (item) => item.productId === product.id && !item.isWeighted && !item.isUnregistered
       );
 
       if (existingIndex > -1) {
-        // Increment quantity
         const updated = [...prevCart];
         const currentItem = updated[existingIndex];
         const newQty = currentItem.qty + (Number(quantity) || 1);
@@ -273,7 +417,6 @@ export function StoreProvider({ children }) {
         if (settings.soundEnabled) playScanBeep();
         return updated;
       } else {
-        // Add new discrete row
         const newItem = {
           cartItemId: 'item_' + Date.now() + Math.random().toString(36).substr(2, 4),
           productId: product.id,
@@ -294,16 +437,13 @@ export function StoreProvider({ children }) {
     });
   };
 
-  /**
-   * Update cart item qty or weight
-   */
   const updateCartItemQty = (cartItemId, newQty) => {
     setCart((prev) =>
       prev
         .map((item) => {
           if (item.cartItemId === cartItemId) {
             const parsed = parseFloat(newQty);
-            if (isNaN(parsed) || parsed <= 0) return null; // remove if 0
+            if (isNaN(parsed) || parsed <= 0) return null;
             const qty = item.isWeighted ? Number(parsed.toFixed(3)) : Math.round(parsed);
             return {
               ...item,
@@ -318,23 +458,14 @@ export function StoreProvider({ children }) {
     );
   };
 
-  /**
-   * Remove item from cart
-   */
   const removeFromCart = (cartItemId) => {
     setCart((prev) => prev.filter((item) => item.cartItemId !== cartItemId));
   };
 
-  /**
-   * Clear entire cart
-   */
   const clearCart = () => {
     setCart([]);
   };
 
-  /**
-   * Park current cart bill
-   */
   const parkBill = (note = '') => {
     if (cart.length === 0) return false;
     const parked = {
@@ -349,9 +480,6 @@ export function StoreProvider({ children }) {
     return true;
   };
 
-  /**
-   * Restore a parked bill
-   */
   const restoreParkedBill = (parkedId) => {
     const target = parkedBills.find((b) => b.id === parkedId);
     if (!target) return false;
@@ -360,15 +488,12 @@ export function StoreProvider({ children }) {
     return true;
   };
 
-  /**
-   * Delete a parked bill
-   */
   const deleteParkedBill = (parkedId) => {
     setParkedBills((prev) => prev.filter((b) => b.id !== parkedId));
   };
 
   /**
-   * Checkout & Complete Sale
+   * Checkout & Complete Sale (Deducts stock locally and syncs to Supabase Cloud)
    */
   const checkoutSale = ({
     paymentMethod = 'cash',
@@ -382,7 +507,6 @@ export function StoreProvider({ children }) {
     const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
     const finalTotal = Math.max(0, subtotal - (Number(discount) || 0));
 
-    // Generate Bill Number: INV-YYYYMMDD-XXXX
     const now = new Date();
     const dateStr = now.getFullYear().toString() +
       String(now.getMonth() + 1).padStart(2, '0') +
@@ -406,8 +530,10 @@ export function StoreProvider({ children }) {
       status: 'completed',
     };
 
-    // 1. Deduct Stock for registered items
+    // 1. Deduct Stock Locally
     const newMovements = [];
+    const stockUpdatesForCloud = [];
+
     setProducts((prevProducts) => {
       const nextProducts = [...prevProducts];
       cart.forEach((cartItem) => {
@@ -422,7 +548,8 @@ export function StoreProvider({ children }) {
               stock: newStockVal,
             };
 
-            // Log stock movement
+            stockUpdatesForCloud.push({ id: current.id, newStock: newStockVal });
+
             newMovements.push({
               id: 'mov_' + Date.now() + Math.random().toString(36).substr(2, 4),
               productId: current.id,
@@ -445,10 +572,8 @@ export function StoreProvider({ children }) {
       setStockMovements((prev) => [...newMovements, ...prev]);
     }
 
-    // 2. Append to Sales History
     setSalesHistory((prev) => [newSale, ...prev]);
 
-    // 3. Update Shift stats
     if (activeShift) {
       setActiveShift((prev) => ({
         ...prev,
@@ -459,10 +584,40 @@ export function StoreProvider({ children }) {
       }));
     }
 
-    // 4. Play audio and clear cart
+    // 2. Cloud Sync (asynchronous without blocking the cashier)
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      (async () => {
+        try {
+          // Save sale to cloud
+          await supabase.from('sales').insert({
+            id: newSale.id,
+            bill_number: newSale.billNumber,
+            subtotal: newSale.subtotal,
+            discount: newSale.discount,
+            total: newSale.total,
+            payment_method: newSale.paymentMethod,
+            cash_received: newSale.cashReceived,
+            change: newSale.change,
+            cashier_name: newSale.cashierName,
+            items: newSale.items,
+          });
+
+          // Update stock on cloud
+          for (const item of stockUpdatesForCloud) {
+            await supabase
+              .from('products')
+              .update({ stock: item.newStock, updated_at: new Date().toISOString() })
+              .eq('id', item.id);
+          }
+        } catch (err) {
+          console.error('Failed to sync sale to cloud:', err);
+        }
+      })();
+    }
+
     if (settings.soundEnabled) playCashRegisterChime();
     setCart([]);
-
     return newSale;
   };
 
@@ -482,32 +637,20 @@ export function StoreProvider({ children }) {
     const numQty = parseFloat(qty);
     if (!productId || isNaN(numQty) || numQty <= 0) return false;
 
+    let targetUpdatedStock = 0;
     setProducts((prev) =>
       prev.map((prod) => {
         if (prod.id === productId) {
           const updatedStock = Number((prod.stock + numQty).toFixed(3));
+          targetUpdatedStock = updatedStock;
           const updated = {
             ...prod,
             stock: updatedStock,
             costPrice: costPrice ? parseFloat(costPrice) : prod.costPrice,
           };
           if (newSellPrice && parseFloat(newSellPrice) > 0) {
-            // Price changed
-            const oldPrice = prod.sellPrice;
             const nextPrice = parseFloat(newSellPrice);
             updated.sellPrice = nextPrice;
-            setPriceHistory((ph) => [
-              {
-                id: 'ph_' + Date.now(),
-                productId: prod.id,
-                productName: prod.name,
-                oldPrice,
-                newPrice: nextPrice,
-                changedBy: performedBy,
-                timestamp: new Date().toISOString(),
-              },
-              ...ph,
-            ]);
           }
           return updated;
         }
@@ -515,32 +658,26 @@ export function StoreProvider({ children }) {
       })
     );
 
-    // Record stock movement
-    const targetProduct = products.find((p) => p.id === productId);
-    setStockMovements((prev) => [
-      {
-        id: 'mov_' + Date.now(),
-        productId,
-        productName: targetProduct ? targetProduct.name : 'สินค้า',
-        type: 'restock',
-        qty: numQty,
-        unit: targetProduct ? targetProduct.unit : 'ชิ้น',
-        costPrice: costPrice ? parseFloat(costPrice) : 0,
-        lotNumber: lotNumber || '-',
-        expiryDate: expiryDate || '-',
-        supplier: supplier || '-',
-        reason: 'รับสินค้าเข้าสต็อก',
-        performedBy,
-        timestamp: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+    // Sync to Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase
+        .from('products')
+        .update({
+          stock: targetUpdatedStock,
+          cost_price: costPrice ? parseFloat(costPrice) : undefined,
+          sell_price: newSellPrice ? parseFloat(newSellPrice) : undefined,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', productId)
+        .then();
+    }
 
     return true;
   };
 
   /**
-   * Stock Count & Adjustment (นับสต็อก/ปรับยอดสต็อก)
+   * Adjust Stock (นับสต็อกบนชั้น)
    */
   const adjustStock = ({
     productId,
@@ -551,67 +688,42 @@ export function StoreProvider({ children }) {
     const parsedCounted = parseFloat(countedStock);
     if (isNaN(parsedCounted)) return false;
 
-    const targetProduct = products.find((p) => p.id === productId);
-    if (!targetProduct) return false;
-
-    const diff = Number((parsedCounted - targetProduct.stock).toFixed(3));
-
     setProducts((prev) =>
       prev.map((p) => (p.id === productId ? { ...p, stock: parsedCounted } : p))
     );
 
-    setStockMovements((prev) => [
-      {
-        id: 'mov_' + Date.now(),
-        productId,
-        productName: targetProduct.name,
-        type: 'adjust',
-        qty: diff, // + or -
-        unit: targetProduct.unit,
-        reason: reason || 'ปรับปรุงยอดสต็อก',
-        performedBy,
-        timestamp: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+    // Sync to Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase
+        .from('products')
+        .update({ stock: parsedCounted, updated_at: new Date().toISOString() })
+        .eq('id', productId)
+        .then();
+    }
 
     return true;
   };
 
-  /**
-   * Fast sell price adjustment (e.g. for fresh produce)
-   */
-  const updateProductPrice = (productId, newPrice, changedBy = 'เจ้าของร้าน') => {
+  const updateProductPrice = (productId, newPrice) => {
     const parsed = parseFloat(newPrice);
     if (isNaN(parsed) || parsed < 0) return false;
 
     setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === productId) {
-          const oldPrice = p.sellPrice;
-          setPriceHistory((ph) => [
-            {
-              id: 'ph_' + Date.now(),
-              productId: p.id,
-              productName: p.name,
-              oldPrice,
-              newPrice: parsed,
-              changedBy,
-              timestamp: new Date().toISOString(),
-            },
-            ...ph,
-          ]);
-          return { ...p, sellPrice: parsed };
-        }
-        return p;
-      })
+      prev.map((p) => (p.id === productId ? { ...p, sellPrice: parsed } : p))
     );
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase
+        .from('products')
+        .update({ sell_price: parsed, updated_at: new Date().toISOString() })
+        .eq('id', productId)
+        .then();
+    }
     return true;
   };
 
-  /**
-   * Add new product to catalog
-   */
   const addProduct = (productData) => {
     const newProduct = {
       id: 'prod_' + Date.now(),
@@ -621,50 +733,65 @@ export function StoreProvider({ children }) {
       costPrice: parseFloat(productData.costPrice) || 0,
       stock: parseFloat(productData.stock) || 0,
       minStockAlert: parseFloat(productData.minStockAlert) || 0,
-      expiryDaysAlert: parseFloat(productData.expiryDaysAlert) || 0,
     };
     setProducts((prev) => [newProduct, ...prev]);
 
-    // Initial stock movement
-    if (newProduct.stock > 0) {
-      setStockMovements((prev) => [
-        {
-          id: 'mov_' + Date.now(),
-          productId: newProduct.id,
-          productName: newProduct.name,
-          type: 'restock',
-          qty: newProduct.stock,
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase
+        .from('products')
+        .insert({
+          id: newProduct.id,
+          name: newProduct.name,
+          type: newProduct.type,
+          category_id: newProduct.categoryId,
+          cost_price: newProduct.costPrice,
+          sell_price: newProduct.sellPrice,
           unit: newProduct.unit,
-          reason: 'เพิ่มสินค้าใหม่เข้าระบบ',
-          performedBy: 'เจ้าของร้าน',
-          timestamp: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
+          is_weighted: newProduct.isWeighted,
+          min_stock_alert: newProduct.minStockAlert,
+          stock: newProduct.stock,
+          barcode: newProduct.barcode,
+          image: newProduct.image,
+          active: true,
+        })
+        .then();
     }
 
     return newProduct;
   };
 
-  /**
-   * Update existing product
-   */
   const updateProduct = (productId, updates) => {
     setProducts((prev) =>
       prev.map((p) => (p.id === productId ? { ...p, ...updates } : p))
     );
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase
+        .from('products')
+        .update({
+          name: updates.name,
+          sell_price: updates.sellPrice ? parseFloat(updates.sellPrice) : undefined,
+          cost_price: updates.costPrice ? parseFloat(updates.costPrice) : undefined,
+          stock: updates.stock ? parseFloat(updates.stock) : undefined,
+          barcode: updates.barcode,
+          image: updates.image,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', productId)
+        .then();
+    }
   };
 
-  /**
-   * Delete product
-   */
   const deleteProduct = (productId) => {
     setProducts((prev) => prev.filter((p) => p.id !== productId));
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('products').delete().eq('id', productId).then();
+    }
   };
 
-  /**
-   * Shift Management: Open & Close
-   */
   const openNewShift = (startCash = 1000, cashierName = 'เจ้าของร้าน') => {
     const newShift = {
       id: 'shift_' + Date.now(),
@@ -701,9 +828,6 @@ export function StoreProvider({ children }) {
     return closed;
   };
 
-  /**
-   * PIN verification for owner actions
-   */
   const verifyAdminPin = (enteredPin) => {
     return String(enteredPin) === String(settings.adminPin || '1234');
   };
@@ -722,6 +846,10 @@ export function StoreProvider({ children }) {
         salesHistory,
         stockMovements,
         priceHistory,
+        isCloudConnected,
+        cloudSyncStatus,
+        connectSupabase,
+        disconnectSupabase,
         setUserRole,
         setSettings,
         setSuppliers,
