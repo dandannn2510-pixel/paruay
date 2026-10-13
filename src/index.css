@@ -2172,8 +2172,9 @@ h1, h2, h3, h4, h5, h6 {
 .scanner-container {
   position: relative;
   width: 100%;
-  min-height: 240px;
-  max-height: 55dvh;
+  aspect-ratio: 4 / 3;
+  min-height: 250px;
+  max-height: 52dvh;
   background: #000000;
   border-radius: var(--radius-md, 8px);
   overflow: hidden;
@@ -2184,6 +2185,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .scanner-video-box {
   width: 100%;
+  height: 100%;
   background: #000000;
   display: flex;
   align-items: center;
@@ -2194,12 +2196,53 @@ h1, h2, h3, h4, h5, h6 {
 .scanner-native-video {
   width: 100% !important;
   height: 100% !important;
-  max-height: 55dvh !important;
   object-fit: cover !important;
   display: block !important;
   border-radius: 0 !important;
-  transform: none !important; /* prevent any rotation bugs */
   background: #000;
+  transition: transform 0.2s ease;
+}
+
+/* Photo Scan Preview Mode */
+.photo-scan-preview-box {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000000;
+}
+
+.photo-preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.photo-scan-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+  backdrop-filter: blur(6px);
+}
+
+.photo-scan-overlay.analyzing {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.photo-scan-overlay.success {
+  background: rgba(6, 78, 59, 0.85);
+}
+
+.photo-scan-overlay.failed {
+  background: rgba(17, 24, 39, 0.9);
 }
 
 /* Hide html5-qrcode's default ugly UI elements */

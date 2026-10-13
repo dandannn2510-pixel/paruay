@@ -1,28 +1,21 @@
 /**
  * barcodeScanner.js
- * Multi-engine barcode/QR scanner for still images.
+ * High-reliability multi-engine barcode and QR scanner for images and photos.
  *
- * Pipeline:
- *  1. Read EXIF orientation → draw corrected canvas
- *  2. Native BarcodeDetector (Chrome Android / Safari 17+) — fast hardware path
- *  3. ZXing MultiFormatReader via canvas luminance source — universal fallback
- *  4. Try 0°, 90°, 270° rotations to handle portrait/landscape photos
+ * Engines & Features:
+ *  1. EXIF orientation correction (handles portrait/landscape smartphone photos)
+ *  2. Downscaling to optimal OCR resolution (1280px max)
+ *  3. Multi-angle evaluation: 0°, 90°, 270°
+ *  4. High-contrast binarization pass for glossy or low-contrast packaging
+ *  5. Hardware BarcodeDetector API (Chrome Android / Safari 17+)
+ *  6. @zxing/browser BrowserMultiFormatReader universal fallback
  */
 
-import {
-  HybridBinarizer,
-  BinaryBitmap,
-  MultiFormatReader,
-  DecodeHintType,
-  BarcodeFormat,
-  NotFoundException,
-} from '@zxing/library';
-// HTMLCanvasElementLuminanceSource is not in main @zxing/library index in this version
-// so we import it directly from its module path
-import { HTMLCanvasElementLuminanceSource } from '@zxing/library/esm/browser/HTMLCanvasElementLuminanceSource';
+import { BrowserMultiFormatReader } from '@zxing/browser';
+import { DecodeHintType, BarcodeFormat } from '@zxing/library';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EXIF orientation
+// EXIF orientation parser
 // ─────────────────────────────────────────────────────────────────────────────
 
 function readExifOrientation(buffer) {
@@ -58,8 +51,8 @@ function readExifOrientation(buffer) {
 }
 
 function applyExifOrientation(img, orientation) {
-  const w = img.naturalWidth;
-  const h = img.naturalHeight;
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d', { willReadFrequently: true });
   const swap = orientation >= 5;
@@ -80,7 +73,7 @@ function applyExifOrientation(img, orientation) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Canvas helpers
+// Canvas transformation helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function loadImg(url) {
@@ -120,13 +113,37 @@ function rotateCanvas(src, deg) {
   return out;
 }
 
+function enhanceContrast(src) {
+  const { width: w, height: h } = src;
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0);
+  try {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const val = gray > 128 ? 255 : 0;
+      d[i] = val;
+      d[i + 1] = val;
+      d[i + 2] = val;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return out;
+  } catch {
+    return src;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// ZXing decode from canvas
+// ZXing MultiFormat reader instance
 // ─────────────────────────────────────────────────────────────────────────────
 
-let _zxReader = null;
-function getZxReader() {
-  if (!_zxReader) {
+let _zxBrowserReader = null;
+export function getBrowserBarcodeReader() {
+  if (!_zxBrowserReader) {
     const hints = new Map();
     hints.set(DecodeHintType.POSSIBLE_FORMATS, [
       BarcodeFormat.EAN_13,
@@ -141,32 +158,31 @@ function getZxReader() {
       BarcodeFormat.CODABAR,
     ]);
     hints.set(DecodeHintType.TRY_HARDER, true);
-    _zxReader = new MultiFormatReader();
-    _zxReader.setHints(hints);
+    _zxBrowserReader = new BrowserMultiFormatReader(hints, {
+      delayBetweenScanAttempts: 80,
+      delayBetweenScanSuccess: 500,
+    });
   }
-  return _zxReader;
+  return _zxBrowserReader;
 }
 
 function zxDecodeCanvas(canvas) {
   try {
-    const src = new HTMLCanvasElementLuminanceSource(canvas);
-    const binarizer = new HybridBinarizer(src);
-    const bitmap = new BinaryBitmap(binarizer);
-    const result = getZxReader().decode(bitmap);
+    const reader = getBrowserBarcodeReader();
+    const result = reader.decodeFromCanvas(canvas);
     return result ? result.getText() : null;
-  } catch (err) {
-    if (err instanceof NotFoundException) return null;
-    throw err;
+  } catch {
+    return null;
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main export
+// Main export: scanBarcodeFromImageFile
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Scan a barcode or QR from a File or Blob.
- * Handles EXIF orientation, high-res downscaling, portrait/landscape rotation.
+ * Handles EXIF orientation, high-res downscaling, portrait/landscape rotation, and high-contrast passes.
  * @param {File|Blob} file
  * @returns {Promise<string>} decoded barcode text
  */
@@ -191,29 +207,37 @@ export async function scanBarcodeFromImageFile(file) {
     URL.revokeObjectURL(objUrl);
   }
 
-  // 3. Rotated candidates: portrait phone holds barcode at 0°/90°/270°
+  // 3. Prepare rotation & filter candidates
+  const r90 = rotateCanvas(base, 90);
+  const r270 = rotateCanvas(base, 270);
   const candidates = [
     base,
-    rotateCanvas(base, 90),
-    rotateCanvas(base, 270),
+    r90,
+    r270,
+    enhanceContrast(base),
+    enhanceContrast(r90),
   ];
 
-  // 4. Try Native BarcodeDetector (Android Chrome / Safari 17)
+  // 4. Try Native BarcodeDetector (Chrome Android / Safari 17+)
   if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
     try {
       const supported = await window.BarcodeDetector.getSupportedFormats().catch(() => []);
       const wanted = ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'itf'];
       const formats = wanted.filter((f) => !supported.length || supported.includes(f));
-      const bd = new window.BarcodeDetector({ formats: formats.length ? formats : ['ean_13', 'code_128', 'qr_code'] });
+      const bd = new window.BarcodeDetector({
+        formats: formats.length ? formats : ['ean_13', 'code_128', 'qr_code'],
+      });
 
       for (const canvas of candidates) {
         try {
           const hits = await bd.detect(canvas);
-          if (hits.length > 0 && hits[0].rawValue) return hits[0].rawValue.trim();
-        } catch { /* next */ }
+          if (hits.length > 0 && hits[0].rawValue) {
+            return hits[0].rawValue.trim();
+          }
+        } catch { /* next candidate */ }
       }
     } catch (e) {
-      console.warn('[scanner] BarcodeDetector failed:', e);
+      console.warn('[scanner] BarcodeDetector failed, falling back to ZXing:', e);
     }
   }
 
