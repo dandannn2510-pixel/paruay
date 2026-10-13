@@ -53,6 +53,70 @@ export function setStoredGeminiApiKey(key) {
   } catch (_) {}
 }
 
+// Cached working model name
+let cachedWorkingModel = null;
+
+/**
+ * Dynamically find the best supported model for this API key
+ */
+export async function getBestAvailableModel(apiKey) {
+  if (cachedWorkingModel) return cachedWorkingModel;
+
+  const candidateModels = [
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-2.0-flash-exp',
+    'gemini-1.5-flash-latest',
+  ];
+
+  try {
+    // Query Google's ListModels endpoint to get the exact active models for this key
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.models)) {
+        // Find models that support generateContent
+        const contentModels = data.models
+          .filter(
+            (m) =>
+              Array.isArray(m.supportedGenerationMethods) &&
+              m.supportedGenerationMethods.includes('generateContent')
+          )
+          .map((m) => m.name.replace(/^models\//, ''));
+
+        // Prioritize modern flash models
+        const matchedFlash = candidateModels.find((cand) => contentModels.includes(cand));
+        if (matchedFlash) {
+          cachedWorkingModel = matchedFlash;
+          return matchedFlash;
+        }
+
+        // If none of candidateModels match, find any model with 'flash'
+        const anyFlash = contentModels.find((m) => m.includes('flash'));
+        if (anyFlash) {
+          cachedWorkingModel = anyFlash;
+          return anyFlash;
+        }
+
+        // Fallback to first supported model
+        if (contentModels.length > 0) {
+          cachedWorkingModel = contentModels[0];
+          return contentModels[0];
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to query ListModels:', err);
+  }
+
+  // Default fallback
+  cachedWorkingModel = 'gemini-2.0-flash';
+  return cachedWorkingModel;
+}
+
 /**
  * Quick validation check for Gemini API key
  */
@@ -63,7 +127,10 @@ export async function testGeminiApiKey(apiKey) {
   }
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${cleanKey}`;
+    cachedWorkingModel = null; // Clear cache on test
+    const model = await getBestAvailableModel(cleanKey);
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -83,11 +150,7 @@ export async function testGeminiApiKey(apiKey) {
     }
 
     const data = await response.json();
-    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (reply.toLowerCase().includes('ok')) {
-      return { success: true };
-    }
-    return { success: true };
+    return { success: true, model };
   } catch (err) {
     return { success: false, error: err.message || 'ไม่สามารถเชื่อมต่อ Google AI ได้' };
   }
@@ -125,13 +188,20 @@ async function toBase64Payload(imageSource) {
 }
 
 /**
- * Call Gemini 1.5/2.0 Flash Vision to recognize product from photo
+ * Call Gemini Flash Vision to recognize product from photo
  */
 async function callGeminiVision(base64Payload, apiKey, onProgress) {
   onProgress?.({ status: '🤖 ส่งรูปให้ AI Gemini วิเคราะห์ฉลากและสินค้า...', progress: 0.3 });
 
-  // Try gemini-1.5-flash first, then gemini-2.0-flash
-  const models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  const primaryModel = await getBestAvailableModel(apiKey);
+  const models = [
+    primaryModel,
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash-latest',
+  ].filter((v, i, a) => a.indexOf(v) === i); // unique
+
   let lastError = null;
 
   const promptText = `คุณคือระบบ AI ผู้เชี่ยวชาญด้านสินค้าในร้านค้าปลีก ร้านของชำ ซูเปอร์มาร์เก็ต และตลาดสดในประเทศไทย
