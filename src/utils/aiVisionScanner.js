@@ -56,19 +56,20 @@ export function setStoredGeminiApiKey(key) {
 // Cached working model name
 let cachedWorkingModel = null;
 
+export const RECOMMENDED_VISION_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+];
+
 /**
  * Dynamically find the best supported model for this API key
  */
 export async function getBestAvailableModel(apiKey) {
   if (cachedWorkingModel) return cachedWorkingModel;
-
-  const candidateModels = [
-    'gemini-2.0-flash',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-2.0-flash-exp',
-    'gemini-1.5-flash-latest',
-  ];
 
   try {
     // Query Google's ListModels endpoint to get the exact active models for this key
@@ -78,30 +79,30 @@ export async function getBestAvailableModel(apiKey) {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.models)) {
-        // Find models that support generateContent
+        // Find models that support generateContent, FILTERING OUT DEPRECATED 2.x and 1.x models!
         const contentModels = data.models
           .filter(
             (m) =>
               Array.isArray(m.supportedGenerationMethods) &&
               m.supportedGenerationMethods.includes('generateContent')
           )
-          .map((m) => m.name.replace(/^models\//, ''));
+          .map((m) => m.name.replace(/^models\//, ''))
+          .filter((m) => !m.startsWith('gemini-1.') && !m.startsWith('gemini-2.'));
 
-        // Prioritize modern flash models
-        const matchedFlash = candidateModels.find((cand) => contentModels.includes(cand));
+        // Prioritize modern flash models in our recommended list
+        const matchedFlash = RECOMMENDED_VISION_MODELS.find((cand) => contentModels.includes(cand));
         if (matchedFlash) {
           cachedWorkingModel = matchedFlash;
           return matchedFlash;
         }
 
-        // If none of candidateModels match, find any model with 'flash'
-        const anyFlash = contentModels.find((m) => m.includes('flash'));
+        // If none of candidateModels match, find any model with 'flash-lite' or 'flash'
+        const anyFlash = contentModels.find((m) => m.includes('flash-lite')) || contentModels.find((m) => m.includes('flash'));
         if (anyFlash) {
           cachedWorkingModel = anyFlash;
           return anyFlash;
         }
 
-        // Fallback to first supported model
         if (contentModels.length > 0) {
           cachedWorkingModel = contentModels[0];
           return contentModels[0];
@@ -113,7 +114,7 @@ export async function getBestAvailableModel(apiKey) {
   }
 
   // Default fallback
-  cachedWorkingModel = 'gemini-2.0-flash';
+  cachedWorkingModel = 'gemini-flash-lite-latest';
   return cachedWorkingModel;
 }
 
@@ -126,34 +127,38 @@ export async function testGeminiApiKey(apiKey) {
     return { success: false, error: 'กรุณากรอก API Key' };
   }
 
-  try {
-    cachedWorkingModel = null; // Clear cache on test
-    const model = await getBestAvailableModel(cleanKey);
+  let lastError = null;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: 'Respond with the single word: OK' }],
-          },
-        ],
-      }),
-    });
+  for (const model of RECOMMENDED_VISION_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: 'Respond with the word OK' }],
+            },
+          ],
+        }),
+      });
 
-    if (!response.ok) {
+      if (response.ok) {
+        cachedWorkingModel = model;
+        return { success: true, model };
+      }
+
       const errJson = await response.json().catch(() => ({}));
       const msg = errJson?.error?.message || `HTTP ${response.status}`;
-      return { success: false, error: `เชื่อมต่อไม่สำเร็จ: ${msg}` };
+      lastError = new Error(msg);
+      // If 503 spike, try next model immediately
+    } catch (err) {
+      lastError = err;
     }
-
-    const data = await response.json();
-    return { success: true, model };
-  } catch (err) {
-    return { success: false, error: err.message || 'ไม่สามารถเชื่อมต่อ Google AI ได้' };
   }
+
+  return { success: false, error: `เชื่อมต่อไม่สำเร็จ: ${lastError?.message || 'ไม่สามารถเชื่อมต่อ Google AI ได้'}` };
 }
 
 /**
@@ -196,10 +201,7 @@ async function callGeminiVision(base64Payload, apiKey, onProgress) {
   const primaryModel = await getBestAvailableModel(apiKey);
   const models = [
     primaryModel,
-    'gemini-2.0-flash',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash-latest',
+    ...RECOMMENDED_VISION_MODELS,
   ].filter((v, i, a) => a.indexOf(v) === i); // unique
 
   let lastError = null;
