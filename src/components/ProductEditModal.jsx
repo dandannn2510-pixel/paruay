@@ -22,6 +22,7 @@ import {
 import { useStore } from '../context/StoreContext';
 import { compressImageFile, getProductPhotoUrl } from '../utils/imageUtils';
 import { generateInStoreBarcode } from '../utils/barcode';
+import { analyzeProductWithAI } from '../utils/aiVisionScanner';
 import { PRODUCT_IMAGE_PRESETS, FALLBACK_IMAGE_BY_CATEGORY } from '../data/productPresets';
 import { CameraScannerModal } from './CameraScannerModal';
 import {
@@ -60,6 +61,7 @@ export function ProductEditModal({ isOpen, product, onClose, onSaveSuccess }) {
   // Photo States
   const [currentImage, setCurrentImage] = useState(product.image || '');
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [showPresetGallery, setShowPresetGallery] = useState(false);
   const [presetCategory, setPresetCategory] = useState('all');
 
@@ -145,6 +147,31 @@ export function ProductEditModal({ isOpen, product, onClose, onSaveSuccess }) {
   const handleResetPhoto = () => {
     playClickSound();
     setCurrentImage('');
+  };
+
+  // Trigger AI Recognition to inspect photo and update name/category
+  const handleAiRecognizeFromImage = async (imgSource) => {
+    const targetImg = imgSource || currentImage;
+    if (!targetImg) return;
+    playClickSound();
+    setIsAiAnalyzing(true);
+    try {
+      const res = await analyzeProductWithAI(targetImg);
+      if (res && res.name) {
+        setName(res.name);
+        if (res.categoryId) setCategoryId(res.categoryId);
+        if (res.unit) setUnit(res.unit);
+        if (typeof res.isWeighted === 'boolean') setIsWeighted(res.isWeighted);
+        if (res.suggestedPrice && (!sellPrice || parseFloat(sellPrice) === 0)) {
+          setSellPrice(String(res.suggestedPrice));
+        }
+        playScanBeep();
+      }
+    } catch (err) {
+      console.warn('AI recognition error in ProductEditModal:', err);
+    } finally {
+      setIsAiAnalyzing(false);
+    }
   };
 
   // Quick Stock Step
@@ -408,6 +435,19 @@ export function ProductEditModal({ isOpen, product, onClose, onSaveSuccess }) {
                   <ImageIcon size={16} className="text-purple-600" />
                   <span>{showPresetGallery ? 'ปิดคลังรูปภาพ' : 'เลือกรูปสำเร็จรูป (22+)'}</span>
                 </button>
+
+                {currentImage && (
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary btn-sm photo-action-btn font-bold"
+                    onClick={() => handleAiRecognizeFromImage()}
+                    disabled={isAiAnalyzing}
+                    title="ให้ AI ช่วยอ่านฉลากเพื่ออัปเดตชื่อและหมวดหมู่จากรูปนี้"
+                  >
+                    <Sparkles size={15} />
+                    <span>{isAiAnalyzing ? 'AI กำลังอ่านรูป...' : 'ให้ AI ตั้งชื่อจากรูปนี้'}</span>
+                  </button>
+                )}
 
                 {currentImage && (
                   <button

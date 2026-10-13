@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { scanBarcodeFromImageFile } from '../utils/barcodeScanner';
-import { extractProductNameFromImage } from '../utils/ocrLabelScanner';
+import { analyzeProductWithAI, getActiveGeminiApiKey } from '../utils/aiVisionScanner';
+import { AiKeyConfigModal } from './AiKeyConfigModal';
 import { compressImageFile } from '../utils/imageUtils';
 import { generateInStoreBarcode } from '../utils/barcode';
 import { playClickSound, playScanBeep, playCashRegisterChime, playErrorBuzz } from '../utils/sound';
@@ -27,6 +28,11 @@ export function TwoShotAddProductModal({ isOpen, onClose, onProductCreated }) {
   if (!isOpen) return null;
 
   const { products, categories, addProduct } = useStore();
+
+  // AI Configuration Modal state
+  const [isAiConfigOpen, setIsAiConfigOpen] = useState(false);
+  const [hasGeminiKey, setHasGeminiKey] = useState(() => Boolean(getActiveGeminiApiKey()));
+  const [aiEngineUsed, setAiEngineUsed] = useState(''); // 'gemini' | 'local_semantic' | 'local_ocr'
 
   // Hidden file inputs for snapping photos via device camera or file picker
   const labelInputRef = useRef(null);
@@ -62,32 +68,67 @@ export function TwoShotAddProductModal({ isOpen, onClose, onProductCreated }) {
 
     playClickSound();
     setLabelStatus('processing');
-    setLabelProgressText('กำลังบีบอัดรูปภาพ...');
+    setLabelProgressText('กำลังเตรียมรูปภาพสำหรับ AI...');
 
     try {
       // 1. Compress image to clean, lightweight dataURL for product photo
-      const compressedDataUrl = await compressImageFile(file, 500, 0.82);
+      const compressedDataUrl = await compressImageFile(file, 600, 0.85);
       setLabelPhoto(compressedDataUrl);
 
-      // 2. Perform OCR to extract product name
-      setLabelProgressText('กำลังอ่านข้อความบนฉลากสินค้า...');
-      const ocrResult = await extractProductNameFromImage(compressedDataUrl, (p) => {
-        if (p.status) setLabelProgressText(p.status);
+      // 2. Perform AI Recognition (Gemini Multimodal Vision + Thai Semantic Fallback)
+      setLabelProgressText('🤖 ส่งให้ AI วิเคราะห์ฉลากและสินค้า...');
+      const aiResult = await analyzeProductWithAI(compressedDataUrl, {
+        onProgress: (p) => {
+          if (p.status) setLabelProgressText(p.status);
+        },
       });
 
-      if (ocrResult.bestName) {
-        setName(ocrResult.bestName);
-        setLabelCandidates(ocrResult.candidates || []);
+      if (aiResult && aiResult.name) {
+        setName(aiResult.name);
+        setAiEngineUsed(aiResult.aiEngine || 'local_semantic');
+        setLabelCandidates(aiResult.candidates || [aiResult.name]);
+
+        // Auto-fill category if detected
+        if (aiResult.categoryId) {
+          setCategoryId(aiResult.categoryId);
+        }
+
+        // Auto-fill unit if detected
+        if (aiResult.unit) {
+          setUnit(aiResult.unit);
+        }
+
+        // Auto-fill weighted status if detected
+        if (typeof aiResult.isWeighted === 'boolean') {
+          setIsWeighted(aiResult.isWeighted);
+        }
+
+        // Auto-fill suggested retail price if detected and not already set
+        if (aiResult.suggestedPrice && !sellPrice) {
+          setSellPrice(String(aiResult.suggestedPrice));
+        }
+
+        // Auto-fill suggested cost if detected and not already set
+        if (aiResult.suggestedCost && !costPrice) {
+          setCostPrice(String(aiResult.suggestedCost));
+        }
+
+        // Auto-fill barcode if detected in the first photo
+        if (aiResult.barcode && !barcode) {
+          setBarcode(aiResult.barcode);
+          setBarcodeStatus('success');
+        }
+
         setLabelStatus('success');
         playScanBeep();
       } else {
         setLabelStatus('success');
-        setLabelProgressText('อ่านข้อความไม่ชัดเจน กรุณากรอกชื่อสินค้าเพิ่มเติม');
+        setLabelProgressText('AI อ่านข้อความไม่ชัดเจน กรุณากรอกชื่อสินค้าเพิ่มเติม');
       }
     } catch (err) {
-      console.error('Label OCR error:', err);
+      console.error('AI Product analysis error:', err);
       setLabelStatus('error');
-      setLabelProgressText('ไม่สามารถอ่านตัวหนังสือได้ กรุณาพิมพ์ชื่อสินค้า');
+      setLabelProgressText('ไม่สามารถวิเคราะห์รูปได้ กรุณาพิมพ์ชื่อสินค้า');
     } finally {
       if (e.target) e.target.value = '';
     }
@@ -217,25 +258,65 @@ export function TwoShotAddProductModal({ isOpen, onClose, onProductCreated }) {
               <Sparkles size={20} className="text-white" />
             </div>
             <div>
-              <h3 className="modal-title font-bold text-lg">เพิ่มสินค้าด้วยรูป 2 ช็อต (AI ด่วน)</h3>
+              <h3 className="modal-title font-bold text-lg">เพิ่มสินค้าด้วยรูป 2 ช็อต (AI อัจฉริยะ)</h3>
               <p className="modal-subtitle text-xs text-muted">
-                ถ่าย 1. ฉลาก (ได้ชื่อ+รูป) + 2. บาร์โค้ด (ได้รหัส) บันทึกเสร็จใน 10 วินาที
+                ถ่าย 1. ฉลาก (AI ดึงชื่อ+หมวดหมู่+ราคา) + 2. บาร์โค้ด (ได้รหัส)
               </p>
             </div>
           </div>
-          <button type="button" className="icon-btn close-btn" onClick={onClose}>
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={`btn btn-xs font-bold flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
+                hasGeminiKey
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                  : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+              }`}
+              onClick={() => setIsAiConfigOpen(true)}
+              title="คลิกเพื่อตั้งค่า Google Gemini AI ฟรี"
+            >
+              <Sparkles size={13} className={hasGeminiKey ? 'text-blue-600' : 'text-amber-600'} />
+              <span>{hasGeminiKey ? '🤖 Gemini AI พร้อมใช้' : '✨ เชื่อมต่อ Gemini AI ฟรี'}</span>
+            </button>
+            <button type="button" className="icon-btn close-btn" onClick={onClose}>
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="two-shot-body">
+          {/* Tip Banner if Gemini Key is not configured yet */}
+          {!hasGeminiKey && (
+            <div
+              className="p-2.5 mb-3 rounded-xl flex items-center justify-between gap-2 text-xs"
+              style={{
+                background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
+                border: '1px solid #bfdbfe',
+              }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Sparkles size={16} className="text-blue-600 shrink-0" />
+                <span className="text-blue-900 font-medium truncate">
+                  💡 เชื่อมต่อ Google Gemini AI ฟรี เพื่อให้อ่านชื่อ ฉลาก แบรนด์ และราคาได้แม่นยำ 100%
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-xs font-bold shrink-0 shadow-sm"
+                onClick={() => setIsAiConfigOpen(true)}
+              >
+                ตั้งค่า AI ฟรี (30 วิ)
+              </button>
+            </div>
+          )}
+
           {/* Top 2 Photo Cards */}
           <div className="two-shot-grid">
             {/* 1. Label Photo Card */}
             <div className={`shot-card ${labelStatus === 'success' ? 'card-done' : ''}`}>
               <div className="shot-card-header">
                 <span className="shot-number-badge">รูปที่ 1</span>
-                <span className="shot-title">ฉลากสินค้า (หาชื่อ)</span>
+                <span className="shot-title">ฉลาก/ตัวสินค้า (AI ดึงชื่อ+หมวด+ราคา)</span>
               </div>
 
               <div
@@ -278,9 +359,24 @@ export function TwoShotAddProductModal({ isOpen, onClose, onProductCreated }) {
                   </div>
                 )}
                 {labelStatus === 'success' && (
-                  <div className="status-pill status-success">
-                    <CheckCircle2 size={13} />
-                    <span>อ่านชื่อสินค้าและใส่รูปแล้ว</span>
+                  <div className="status-pill status-success flex items-center justify-between w-full">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <CheckCircle2 size={13} className="shrink-0" />
+                      <span className="truncate">
+                        {aiEngineUsed === 'gemini'
+                          ? '🤖 Gemini AI ระบุชื่อ หมวดหมู่ และราคาสำเร็จ'
+                          : '✨ AI ระบุชื่อและหมวดหมู่สินค้าสำเร็จ'}
+                      </span>
+                    </div>
+                    {!hasGeminiKey && (
+                      <button
+                        type="button"
+                        className="text-xs text-primary underline font-bold shrink-0 ml-1"
+                        onClick={() => setIsAiConfigOpen(true)}
+                      >
+                        เปิดโหมด Gemini AI ฟรี
+                      </button>
+                    )}
                   </div>
                 )}
                 {labelStatus === 'error' && (
@@ -544,6 +640,13 @@ export function TwoShotAddProductModal({ isOpen, onClose, onProductCreated }) {
           </form>
         </div>
       </div>
+
+      {/* Google Gemini AI Vision Configuration Modal */}
+      <AiKeyConfigModal
+        isOpen={isAiConfigOpen}
+        onClose={() => setIsAiConfigOpen(false)}
+        onKeySaved={(k) => setHasGeminiKey(Boolean(k))}
+      />
     </div>
   );
 }

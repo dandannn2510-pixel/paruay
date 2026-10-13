@@ -1,4 +1,3 @@
-import React, { useState, useRef } from 'react';
 import {
   Settings,
   Store,
@@ -12,9 +11,17 @@ import {
   Upload,
   Image,
   Cloud,
+  Sparkles,
+  Key,
+  ExternalLink,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { playClickSound, playCashRegisterChime } from '../utils/sound';
+import {
+  getActiveGeminiApiKey,
+  setStoredGeminiApiKey,
+  testGeminiApiKey,
+} from '../utils/aiVisionScanner';
+import { playClickSound, playCashRegisterChime, playErrorBuzz } from '../utils/sound';
 
 export function SettingsView() {
   const {
@@ -31,6 +38,12 @@ export function SettingsView() {
   const [permanentQrImage, setPermanentQrImage] = useState(settings.permanentQrImage || '/qr-promptpay.png');
   const [adminPin, setAdminPin] = useState(settings.adminPin || '1234');
   const [soundEnabled, setSoundEnabled] = useState(settings.soundEnabled ?? true);
+
+  // Gemini AI Vision State
+  const [geminiKey, setGeminiKey] = useState(() => getActiveGeminiApiKey());
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [geminiTestStatus, setGeminiTestStatus] = useState('idle'); // 'idle' | 'success' | 'error'
+  const [geminiTestMsg, setGeminiTestMsg] = useState('');
 
   // Cloud Supabase State
   const [cloudUrl, setCloudUrl] = useState(localStorage.getItem('paruay_supabase_url') || '');
@@ -84,9 +97,41 @@ export function SettingsView() {
       soundEnabled,
     });
 
+    setStoredGeminiApiKey(geminiKey.trim());
+
     playCashRegisterChime();
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
+  };
+
+  const handleTestGemini = async () => {
+    if (!geminiKey.trim()) {
+      setGeminiTestStatus('error');
+      setGeminiTestMsg('กรุณากรอก API Key ก่อนทดสอบ');
+      playErrorBuzz();
+      return;
+    }
+    playClickSound();
+    setIsTestingGemini(true);
+    setGeminiTestStatus('idle');
+    setGeminiTestMsg('');
+    try {
+      const res = await testGeminiApiKey(geminiKey.trim());
+      if (res.success) {
+        setGeminiTestStatus('success');
+        playCashRegisterChime();
+      } else {
+        setGeminiTestStatus('error');
+        setGeminiTestMsg(res.error || 'การเชื่อมต่อล้มเหลว');
+        playErrorBuzz();
+      }
+    } catch (err) {
+      setGeminiTestStatus('error');
+      setGeminiTestMsg(err.message || 'เกิดข้อผิดพลาด');
+      playErrorBuzz();
+    } finally {
+      setIsTestingGemini(false);
+    }
   };
 
   const handleResetData = () => {
@@ -254,7 +299,82 @@ export function SettingsView() {
           </div>
         </div>
 
-        {/* Card 4: Supabase Multi-Device Cloud Database */}
+        {/* Card 4: Google Gemini AI Vision Assistant */}
+        <div className="pos-card-box">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="card-box-title mb-0">
+              <Sparkles size={20} className="text-primary" />
+              <span>AI ผู้ช่วยอัจฉริยะ (Google Gemini AI Vision)</span>
+            </h3>
+            {geminiKey ? (
+              <span className="status-pill status-normal">🟢 เปิดใช้งาน AI แล้ว</span>
+            ) : (
+              <span className="status-pill status-low">⚪ ยังไม่ได้ใส่ API Key</span>
+            )}
+          </div>
+
+          <p className="text-xs text-muted mb-3">
+            ใช้พลังของ <strong>Google Gemini AI Multimodal Vision</strong>{' '}
+            อ่านรูปฉลากสินค้า ตั้งชื่อภาษาไทยถูกต้อง 100% จัดหมวดหมู่อัตโนมัติ และประเมินราคาขายทันที
+          </p>
+
+          <div className="p-3 mb-3 rounded-lg bg-blue-50 border border-blue-200 text-xs">
+            <div className="flex items-center justify-between mb-1">
+              <strong className="text-blue-900 font-bold">วิธีขอ API Key ฟรีจาก Google:</strong>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary font-bold flex items-center gap-1 hover:underline"
+              >
+                <span>เปิด Google AI Studio</span>
+                <ExternalLink size={12} />
+              </a>
+            </div>
+            <p className="text-blue-800 m-0">
+              เข้า Google AI Studio แล้วกด <b>Create API key</b> นำรหัสมาวางด้านล่าง (ฟรี ไม่มีค่าบริการ)
+            </p>
+          </div>
+
+          <div className="form-group mb-2">
+            <label className="form-label font-bold text-xs flex items-center gap-1">
+              <Key size={14} /> Google Gemini API Key:
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                className="form-control font-mono text-xs flex-1"
+                placeholder="AIzaSy..."
+                value={geminiKey}
+                onChange={(e) => {
+                  setGeminiKey(e.target.value);
+                  setGeminiTestStatus('idle');
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm font-bold shrink-0"
+                onClick={handleTestGemini}
+                disabled={isTestingGemini || !geminiKey.trim()}
+              >
+                {isTestingGemini ? 'กำลังทดสอบ...' : 'ทดสอบการเชื่อมต่อ'}
+              </button>
+            </div>
+          </div>
+
+          {geminiTestStatus === 'success' && (
+            <div className="text-success text-xs font-bold mb-2">
+              ✓ การเชื่อมต่อสำเร็จ! AI พร้อมทำงานวิเคราะห์รูปภาพสินค้า
+            </div>
+          )}
+          {geminiTestStatus === 'error' && (
+            <div className="text-danger text-xs font-bold mb-2">
+              ✗ {geminiTestMsg || 'เชื่อมต่อไม่สำเร็จ กรุณาตรวจสอบ API Key'}
+            </div>
+          )}
+        </div>
+
+        {/* Card 5: Supabase Multi-Device Cloud Database */}
         <div className="pos-card-box">
           <div className="flex items-center justify-between mb-2">
             <h3 className="card-box-title mb-0">
