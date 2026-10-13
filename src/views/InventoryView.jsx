@@ -29,6 +29,7 @@ import { TwoShotAddProductModal } from '../components/TwoShotAddProductModal';
 import { QuickPriceModal } from '../components/QuickPriceModal';
 import { ProductEditModal } from '../components/ProductEditModal';
 import { ProductThumbnail } from '../components/ProductThumbnail';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { playClickSound, playCashRegisterChime } from '../utils/sound';
 
 export function InventoryView({ onNavigate }) {
@@ -58,6 +59,10 @@ export function InventoryView({ onNavigate }) {
 
   // Fast price edit modal
   const [editingPriceProduct, setEditingPriceProduct] = useState(null);
+
+  // Dedicated In-App Confirm Delete Modal
+  const [deleteConfirmProduct, setDeleteConfirmProduct] = useState(null);
+  const [toastMessage, setToastMessage] = useState('');
 
   // Stock movement drawer
   const [viewHistoryProduct, setViewHistoryProduct] = useState(null);
@@ -120,16 +125,33 @@ export function InventoryView({ onNavigate }) {
   // Handle Discontinue / Reactivate
   const handleToggleActive = (p) => {
     playClickSound();
-    toggleProductActive(p.id);
+    const nextActive = toggleProductActive(p.id);
+    setToastMessage(
+      nextActive
+        ? `🟢 เปิดขายสินค้า "${p.name}" อีกครั้งแล้ว`
+        : `⏸️ พักการจำหน่ายสินค้า "${p.name}" (ซ่อนจากหน้าขายแล้ว)`
+    );
+    setTimeout(() => setToastMessage(''), 4000);
   };
 
-  // Handle Permanent Delete
+  // Handle Delete Product -> Open In-App Confirm Modal
   const handleDeleteProduct = (p) => {
     playClickSound();
-    if (confirm(`คุณแน่ใจว่าต้องการลบสินค้า "${p.name}" ออกจากระบบถาวรหรือไม่? ข้อมูลจะไม่สามารถกู้คืนได้`)) {
-      deleteProduct(p.id);
-      playCashRegisterChime();
-    }
+    setDeleteConfirmProduct(p);
+  };
+
+  const handleProductDeleted = (p) => {
+    setToastMessage(`🗑️ ลบสินค้า "${p.name}" ออกจากระบบและคลังสินค้าถาวรเรียบร้อยแล้ว`);
+    setTimeout(() => setToastMessage(''), 4000);
+  };
+
+  const handleProductToggled = (p, nextActive) => {
+    setToastMessage(
+      nextActive
+        ? `🟢 เปิดขายสินค้า "${p.name}" อีกครั้งแล้ว`
+        : `⏸️ พักการจำหน่ายสินค้า "${p.name}" (ซ่อนจากหน้าขายแล้ว)`
+    );
+    setTimeout(() => setToastMessage(''), 4000);
   };
 
   const handleOpenPriceModal = (p) => {
@@ -722,6 +744,36 @@ export function InventoryView({ onNavigate }) {
         isOpen={isTwoShotOpen}
         onClose={() => setIsTwoShotOpen(false)}
       />
+
+      {/* Dedicated In-App Confirm Delete Modal */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(deleteConfirmProduct)}
+        product={deleteConfirmProduct}
+        onClose={() => setDeleteConfirmProduct(null)}
+        onDeleted={handleProductDeleted}
+        onToggledActive={handleProductToggled}
+      />
+
+      {/* Instant Action Toast Notification */}
+      {toastMessage && (
+        <div
+          className="fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-2xl bg-gray-900 text-white text-sm font-bold flex items-center gap-3 animate-fade-in"
+          style={{
+            maxWidth: 420,
+            border: '1px solid rgba(255,255,255,0.15)',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
+          }}
+        >
+          <span>{toastMessage}</span>
+          <button
+            type="button"
+            className="text-gray-400 hover:text-white ml-auto font-bold p-1"
+            onClick={() => setToastMessage('')}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -27,6 +27,7 @@ import { ProductEditModal } from '../components/ProductEditModal';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { QuickPriceModal } from '../components/QuickPriceModal';
 import { ProductThumbnail } from '../components/ProductThumbnail';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { FALLBACK_IMAGE_BY_CATEGORY, PRODUCT_IMAGE_PRESETS } from '../data/productPresets';
 import { playClickSound, playScanBeep } from '../utils/sound';
 
@@ -45,6 +46,10 @@ export function ProductsView() {
 
   // Sticker Modal
   const [stickerProduct, setStickerProduct] = useState(null);
+
+  // In-App Confirm Delete Modal
+  const [deleteConfirmProduct, setDeleteConfirmProduct] = useState(null);
+  const [toastMessage, setToastMessage] = useState('');
 
   // Form Fields
   const [name, setName] = useState('');
@@ -168,10 +173,22 @@ export function ProductsView() {
   };
 
   const handleDelete = (p) => {
-    if (confirm(`คุณแน่ใจว่าต้องการลบสินค้า "${p.name}" หรือไม่?`)) {
-      playClickSound();
-      deleteProduct(p.id);
-    }
+    playClickSound();
+    setDeleteConfirmProduct(p);
+  };
+
+  const handleProductDeleted = (p) => {
+    setToastMessage(`🗑️ ลบสินค้า "${p.name}" ออกจากระบบและคลังสินค้าถาวรเรียบร้อยแล้ว`);
+    setTimeout(() => setToastMessage(''), 4000);
+  };
+
+  const handleProductToggled = (p, nextActive) => {
+    setToastMessage(
+      nextActive
+        ? `🟢 เปิดขายสินค้า "${p.name}" อีกครั้งแล้ว`
+        : `⏸️ พักการจำหน่ายสินค้า "${p.name}" (ซ่อนจากหน้าขายแล้ว)`
+    );
+    setTimeout(() => setToastMessage(''), 4000);
   };
 
   const filteredProducts = products.filter((p) => {
@@ -646,6 +663,36 @@ export function ProductsView() {
         isOpen={Boolean(quickPriceProduct)}
         onClose={() => setQuickPriceProduct(null)}
       />
+
+      {/* Dedicated In-App Confirm Delete Modal */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(deleteConfirmProduct)}
+        product={deleteConfirmProduct}
+        onClose={() => setDeleteConfirmProduct(null)}
+        onDeleted={handleProductDeleted}
+        onToggledActive={handleProductToggled}
+      />
+
+      {/* Instant Action Toast Notification */}
+      {toastMessage && (
+        <div
+          className="fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-2xl bg-gray-900 text-white text-sm font-bold flex items-center gap-3 animate-fade-in"
+          style={{
+            maxWidth: 420,
+            border: '1px solid rgba(255,255,255,0.15)',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
+          }}
+        >
+          <span>{toastMessage}</span>
+          <button
+            type="button"
+            className="text-gray-400 hover:text-white ml-auto font-bold p-1"
+            onClick={() => setToastMessage('')}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -11,23 +11,24 @@ export function StoreProvider({ children }) {
   // 1. Products
   const [products, setProducts] = useState(() => {
     try {
+      const deletedIds = new Set(JSON.parse(localStorage.getItem(LS_PREFIX + 'deleted_ids') || '[]'));
       const saved = localStorage.getItem(LS_PREFIX + 'products');
-      if (saved) {
+      if (saved !== null) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          if (!parsed[0].image || (!parsed[0].image.startsWith('http') && !parsed[0].image.startsWith('data:') && !parsed[0].image.startsWith('/'))) {
-            return INITIAL_PRODUCTS;
-          }
-          return parsed.map((p) => ({
-            ...p,
-            sellPrice: Number(p.sellPrice) || 0,
-            costPrice: Number(p.costPrice) || 0,
-            stock: Number(p.stock) || 0,
-            minStockAlert: Number(p.minStockAlert) || 0,
-          }));
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter((p) => p && p.id && !deletedIds.has(p.id))
+            .map((p) => ({
+              ...p,
+              sellPrice: Number(p.sellPrice) || 0,
+              costPrice: Number(p.costPrice) || 0,
+              stock: Number(p.stock) || 0,
+              minStockAlert: Number(p.minStockAlert) || 0,
+              active: p.active !== false,
+            }));
         }
       }
-      return INITIAL_PRODUCTS;
+      return INITIAL_PRODUCTS.filter((p) => !deletedIds.has(p.id));
     } catch {
       return INITIAL_PRODUCTS;
     }
@@ -237,26 +238,44 @@ export function StoreProvider({ children }) {
           setIsCloudConnected(true);
           setCloudSyncStatus('connected');
 
+          const deletedIds = new Set(JSON.parse(localStorage.getItem(LS_PREFIX + 'deleted_ids') || '[]'));
+
           if (cloudProds && cloudProds.length > 0) {
-            // Map db snake_case to frontend camelCase
-            const mapped = cloudProds.map((cp) => ({
-              id: cp.id,
-              name: cp.name,
-              type: cp.type || 'packaged',
-              categoryId: cp.category_id,
-              costPrice: parseFloat(cp.cost_price) || 0,
-              sellPrice: parseFloat(cp.sell_price) || 0,
-              unit: cp.unit,
-              isWeighted: Boolean(cp.is_weighted),
-              minStockAlert: parseFloat(cp.min_stock_alert) || 0,
-              stock: parseFloat(cp.stock) || 0,
-              barcode: cp.barcode,
-              image: cp.image,
-              active: cp.active !== false,
-            }));
-            setProducts(mapped);
-          } else {
-            // Auto-seed Supabase with initial realistic products
+            // Map db snake_case to frontend camelCase, FILTERING OUT DELETED PRODUCTS!
+            const mapped = cloudProds
+              .filter((cp) => !deletedIds.has(cp.id))
+              .map((cp) => ({
+                id: cp.id,
+                name: cp.name,
+                type: cp.type || 'packaged',
+                categoryId: cp.category_id,
+                costPrice: parseFloat(cp.cost_price) || 0,
+                sellPrice: parseFloat(cp.sell_price) || 0,
+                unit: cp.unit,
+                isWeighted: Boolean(cp.is_weighted),
+                minStockAlert: parseFloat(cp.min_stock_alert) || 0,
+                stock: parseFloat(cp.stock) || 0,
+                barcode: cp.barcode,
+                image: cp.image,
+                active: cp.active !== false,
+              }));
+            setProducts((prev) => {
+              const cloudMap = new Map(mapped.map((p) => [p.id, p]));
+              const localOnly = prev.filter((p) => !cloudMap.has(p.id) && !deletedIds.has(p.id));
+              const combined = [...mapped, ...localOnly];
+              safeSetItem(LS_PREFIX + 'products', JSON.stringify(combined));
+              return combined;
+            });
+
+            // Clean up any zombie products on cloud that were deleted
+            if (deletedIds.size > 0) {
+              const toPurge = cloudProds.filter((cp) => deletedIds.has(cp.id));
+              for (const p of toPurge) {
+                supabase.from('products').delete().eq('id', p.id).then();
+              }
+            }
+          } else if (deletedIds.size === 0) {
+            // Auto-seed Supabase with initial realistic products only if user has never deleted everything
             console.log('Seeding initial products to Supabase...');
             const seedRows = INITIAL_PRODUCTS.map((p) => ({
               id: p.id,
@@ -310,6 +329,8 @@ export function StoreProvider({ children }) {
             );
           } else if (payload.eventType === 'INSERT' && payload.new) {
             const n = payload.new;
+            const deletedIds = new Set(JSON.parse(localStorage.getItem(LS_PREFIX + 'deleted_ids') || '[]'));
+            if (deletedIds.has(n.id)) return; // Don't resurrect deleted products!
             setProducts((prev) => {
               if (prev.some((p) => p.id === n.id)) return prev;
               return [
@@ -331,6 +352,11 @@ export function StoreProvider({ children }) {
                 ...prev,
               ];
             });
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            const delId = payload.old.id;
+            console.log('Realtime product delete received:', delId);
+            setProducts((prev) => prev.filter((p) => p.id !== delId));
+            setCart((prev) => prev.filter((item) => item.productId !== delId));
           }
         }
       )
@@ -929,13 +955,43 @@ export function StoreProvider({ children }) {
     return true;
   };
 
-  const deleteProduct = (productId) => {
-    setProducts((prev) => prev.filter((p) => p.id !== productId));
-    setCart((prev) => prev.filter((item) => item.productId !== productId));
+  const deleteProduct = async (productId) => {
+    if (!productId) return false;
+
+    // 1. Immediately remove from state
+    setProducts((prev) => {
+      const next = prev.filter((p) => p.id !== productId);
+      safeSetItem(LS_PREFIX + 'products', JSON.stringify(next));
+      return next;
+    });
+
+    // 2. Remove from active cart
+    setCart((prev) => {
+      const next = prev.filter((item) => item.productId !== productId);
+      safeSetItem(LS_PREFIX + 'cart', JSON.stringify(next));
+      return next;
+    });
+
+    // 3. Persist in deleted_ids tombstone so it can NEVER be resurrected by sync
+    try {
+      const deletedIds = JSON.parse(localStorage.getItem(LS_PREFIX + 'deleted_ids') || '[]');
+      if (!deletedIds.includes(productId)) {
+        deletedIds.push(productId);
+        localStorage.setItem(LS_PREFIX + 'deleted_ids', JSON.stringify(deletedIds));
+      }
+    } catch (_) {}
+
+    // 4. Delete from Supabase cloud
     const supabase = getSupabaseClient();
     if (supabase) {
-      supabase.from('products').delete().eq('id', productId).then();
+      try {
+        await supabase.from('products').delete().eq('id', productId);
+      } catch (err) {
+        console.warn('Failed to delete product from Supabase:', err);
+      }
     }
+
+    return true;
   };
 
   const openNewShift = (startCash = 1000, cashierName = 'เจ้าของร้าน') => {

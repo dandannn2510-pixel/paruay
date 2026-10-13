@@ -181,9 +181,9 @@ export function ProductEditModal({ isOpen, product, onClose, onSaveSuccess }) {
   };
 
   // Permanent Delete Product
-  const handlePermanentDelete = () => {
+  const handlePermanentDelete = async () => {
     playClickSound();
-    deleteProduct(product.id);
+    await deleteProduct(product.id);
     playCashRegisterChime();
     onClose();
     if (onSaveSuccess) onSaveSuccess({ deleted: true, productId: product.id });
