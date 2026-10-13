@@ -13,35 +13,66 @@ import {
   Scale,
   ArrowUpDown,
   Plus,
+  Minus,
   LayoutGrid,
   List,
+  Sparkles,
+  Trash2,
+  Eye,
+  EyeOff,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { BarcodeStickerModal } from '../components/BarcodeStickerModal';
 import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { TwoShotAddProductModal } from '../components/TwoShotAddProductModal';
 import { QuickPriceModal } from '../components/QuickPriceModal';
+import { ProductEditModal } from '../components/ProductEditModal';
 import { ProductThumbnail } from '../components/ProductThumbnail';
-import { playClickSound } from '../utils/sound';
+import { playClickSound, playCashRegisterChime } from '../utils/sound';
 
 export function InventoryView({ onNavigate }) {
-  const { products, categories, stockMovements, updateProductPrice, userRole } = useStore();
+  const {
+    products,
+    categories,
+    stockMovements,
+    updateProductPrice,
+    adjustStock,
+    deleteProduct,
+    toggleProductActive,
+    userRole,
+  } = useStore();
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'normal' | 'low' | 'out'
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'normal' | 'low' | 'out' | 'discontinued' | 'all_with_discontinued'
   const [viewMode, setViewMode] = useState('card'); // 'card' | 'table'
   const [isEasyAddOpen, setIsEasyAddOpen] = useState(false);
+  const [isTwoShotOpen, setIsTwoShotOpen] = useState(false);
 
-  // Sticker modal
+  // Full Product Edit Modal (Change photo, adjust stock, delete/discontinue, edit fields)
+  const [editingProduct, setEditingProduct] = useState(null);
+
+  // Barcode Sticker modal
   const [stickerProduct, setStickerProduct] = useState(null);
 
   // Fast price edit modal
   const [editingPriceProduct, setEditingPriceProduct] = useState(null);
-  const [newPriceInput, setNewPriceInput] = useState('');
 
   // Stock movement drawer
   const [viewHistoryProduct, setViewHistoryProduct] = useState(null);
 
+  // KPI Calculations
+  const totalActive = products.filter((p) => p.active !== false).length;
+  const lowOrOutCount = products.filter(
+    (p) => p.active !== false && (Number(p.stock) || 0) <= (Number(p.minStockAlert) || 5)
+  ).length;
+  const totalDiscontinued = products.filter((p) => p.active === false).length;
+  const totalStockRetailValue = products
+    .filter((p) => p.active !== false)
+    .reduce((sum, p) => sum + (Number(p.sellPrice) || 0) * (Number(p.stock) || 0), 0);
+
+  // Filtered Products
   const filteredProducts = products.filter((p) => {
     const q = search.toLowerCase().trim();
     const matchSearch =
@@ -53,12 +84,53 @@ export function InventoryView({ onNavigate }) {
       categoryFilter === 'all' || p.categoryId === categoryFilter;
 
     let matchStatus = true;
-    if (statusFilter === 'out') matchStatus = p.stock <= 0;
-    else if (statusFilter === 'low') matchStatus = p.stock > 0 && p.stock <= p.minStockAlert;
-    else if (statusFilter === 'normal') matchStatus = p.stock > p.minStockAlert;
+    const stockVal = Number(p.stock) || 0;
+    const minAlert = Number(p.minStockAlert) || 5;
+
+    if (statusFilter === 'out') {
+      matchStatus = p.active !== false && stockVal <= 0;
+    } else if (statusFilter === 'low') {
+      matchStatus = p.active !== false && stockVal > 0 && stockVal <= minAlert;
+    } else if (statusFilter === 'normal') {
+      matchStatus = p.active !== false && stockVal > minAlert;
+    } else if (statusFilter === 'discontinued') {
+      matchStatus = p.active === false;
+    } else if (statusFilter === 'all') {
+      matchStatus = p.active !== false; // Default: show active products only
+    } else if (statusFilter === 'all_with_discontinued') {
+      matchStatus = true;
+    }
 
     return matchSearch && matchCategory && matchStatus;
   });
+
+  // Handle Quick Stepper for Stock (+1 / -1)
+  const handleQuickStockStep = (p, delta) => {
+    playClickSound();
+    const current = Number(p.stock) || 0;
+    const nextVal = Math.max(0, Number((current + delta).toFixed(3)));
+    adjustStock({
+      productId: p.id,
+      countedStock: nextVal,
+      reason: delta > 0 ? 'รับสินค้าเพิ่มด่วน' : 'ปรับลดยอดสต็อกด่วน',
+      performedBy: 'เจ้าของร้าน',
+    });
+  };
+
+  // Handle Discontinue / Reactivate
+  const handleToggleActive = (p) => {
+    playClickSound();
+    toggleProductActive(p.id);
+  };
+
+  // Handle Permanent Delete
+  const handleDeleteProduct = (p) => {
+    playClickSound();
+    if (confirm(`คุณแน่ใจว่าต้องการลบสินค้า "${p.name}" ออกจากระบบถาวรหรือไม่? ข้อมูลจะไม่สามารถกู้คืนได้`)) {
+      deleteProduct(p.id);
+      playCashRegisterChime();
+    }
+  };
 
   const handleOpenPriceModal = (p) => {
     playClickSound();
@@ -72,7 +144,7 @@ export function InventoryView({ onNavigate }) {
         <div>
           <h2>📦 จัดการคลังสินค้าและสต็อก (Inventory)</h2>
           <p className="section-subtitle">
-            ตรวจสอบจำนวนคงเหลือ, ปรับราคาขายสด, และพิมพ์สติกเกอร์บาร์โค้ด
+            ตรวจสอบจำนวนคงเหลือ, ปรับสต็อก, เปลี่ยนรูปภาพ, และลบสินค้าที่เลิกขาย
           </p>
         </div>
         <div className="header-actions">
@@ -85,6 +157,18 @@ export function InventoryView({ onNavigate }) {
           </button>
           <button
             type="button"
+            className="btn btn-two-shot-trigger font-bold shadow-sm"
+            onClick={() => {
+              playClickSound();
+              setIsTwoShotOpen(true);
+            }}
+            title="ถ่าย 2 รูปเพิ่มสินค้า (ฉลาก + บาร์โค้ด)"
+          >
+            <Sparkles size={18} className="two-shot-sparkle-icon" />
+            <span>📸 ถ่าย 2 รูปเพิ่มด่วน</span>
+          </button>
+          <button
+            type="button"
             className="btn btn-primary font-bold shadow-sm"
             onClick={() => {
               playClickSound();
@@ -94,6 +178,53 @@ export function InventoryView({ onNavigate }) {
             <Plus size={18} />
             <span>+ เพิ่มสินค้าใหม่</span>
           </button>
+        </div>
+      </div>
+
+      {/* KPI Overview Cards */}
+      <div className="inventory-kpi-grid">
+        <div className="kpi-mini-card">
+          <div className="kpi-icon-wrap bg-blue-50 text-blue-600">
+            <Package size={20} />
+          </div>
+          <div>
+            <span className="kpi-label">สินค้าที่มีขาย</span>
+            <strong className="kpi-val">{totalActive} รายการ</strong>
+          </div>
+        </div>
+
+        <div className="kpi-mini-card">
+          <div className="kpi-icon-wrap bg-amber-50 text-amber-600">
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <span className="kpi-label">ใกล้หมด / หมดสต็อก</span>
+            <strong className={`kpi-val ${lowOrOutCount > 0 ? 'text-danger' : 'text-success'}`}>
+              {lowOrOutCount} รายการ
+            </strong>
+          </div>
+        </div>
+
+        <div className="kpi-mini-card">
+          <div className="kpi-icon-wrap bg-emerald-50 text-emerald-600">
+            <DollarSign size={20} />
+          </div>
+          <div>
+            <span className="kpi-label">มูลค่าสินค้าหน้าร้าน</span>
+            <strong className="kpi-val text-success">
+              {totalStockRetailValue.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ฿
+            </strong>
+          </div>
+        </div>
+
+        <div className="kpi-mini-card">
+          <div className="kpi-icon-wrap bg-gray-100 text-gray-500">
+            <EyeOff size={20} />
+          </div>
+          <div>
+            <span className="kpi-label">เลิกขายแล้ว (ไม่มีขาย)</span>
+            <strong className="kpi-val text-muted">{totalDiscontinued} รายการ</strong>
+          </div>
         </div>
       </div>
 
@@ -128,10 +259,12 @@ export function InventoryView({ onNavigate }) {
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
-          <option value="all">ทุกสถานะสต็อก</option>
-          <option value="normal">🟢 ปกติ (สต็อกพอ)</option>
+          <option value="all">ทุกสถานะ (สินค้ามีขาย)</option>
+          <option value="normal">🟢 ปกติ (สต็อกพอขาย)</option>
           <option value="low">🟡 ใกล้หมด (ต่ำกว่าจุดสั่ง)</option>
           <option value="out">🔴 หมดสต็อก (0)</option>
+          <option value="discontinued">⏸️ เลิกขายแล้ว ({totalDiscontinued})</option>
+          <option value="all_with_discontinued">📦 ทั้งหมด (รวมของเลิกขาย)</option>
         </select>
 
         {/* View Mode Toggle */}
@@ -172,20 +305,32 @@ export function InventoryView({ onNavigate }) {
             </div>
           ) : (
             filteredProducts.map((p) => {
-              const isOutOfStock = p.stock <= 0;
-              const isLowStock = p.stock > 0 && p.stock <= p.minStockAlert;
+              const isDiscontinued = p.active === false;
+              const stockVal = Number(p.stock) || 0;
+              const minAlert = Number(p.minStockAlert) || 5;
+              const isOutOfStock = stockVal <= 0;
+              const isLowStock = stockVal > 0 && stockVal <= minAlert;
 
               return (
-                <div key={p.id} className="inventory-card-item">
+                <div
+                  key={p.id}
+                  className={`inventory-card-item ${isDiscontinued ? 'opacity-70 bg-gray-50 border-dashed' : ''}`}
+                >
                   <div className="flex items-center gap-3">
                     <ProductThumbnail product={p} size={54} />
                     <div className="flex-1 min-w-0">
-                      <strong className="block text-base truncate">{p.name}</strong>
-                      <span className="text-xs text-muted font-mono">{p.barcode || 'ไม่มีบาร์โค้ด'}</span>
+                      <strong className="block text-base truncate" style={{ marginBottom: '2px' }} title={p.name}>
+                        {p.name}
+                      </strong>
+                      <span className="block text-xs text-muted font-mono" style={{ marginBottom: '2px' }}>
+                        {p.barcode || 'ไม่มีบาร์โค้ด'}
+                      </span>
                       <div className="text-xs text-muted">หมวด: {categories.find((c) => c.id === p.categoryId)?.name || '-'}</div>
                     </div>
                     <div>
-                      {isOutOfStock ? (
+                      {isDiscontinued ? (
+                        <span className="status-pill status-error">⏸️ เลิกขาย</span>
+                      ) : isOutOfStock ? (
                         <span className="status-pill status-out">🔴 หมด</span>
                       ) : isLowStock ? (
                         <span className="status-pill status-low">🟡 ใกล้หมด</span>
@@ -198,41 +343,84 @@ export function InventoryView({ onNavigate }) {
                   <div className="flex items-center justify-between mt-3 pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
                     <div>
                       <span className="text-xs text-muted block">ราคาขาย / {p.unit}:</span>
-                      <strong className="text-primary text-lg font-bold">
-                        {p.sellPrice.toFixed(2)} ฿
-                      </strong>
-                      {p.costPrice > 0 && (
-                        <span className="text-xs text-muted ml-1">(ทุน {(Number(p.costPrice) || 0).toFixed(2)})</span>
-                      )}
+                      <div className="flex items-baseline gap-1.5 mt-0.5">
+                        <strong className="text-primary text-lg font-bold">
+                          {(Number(p.sellPrice) || 0).toFixed(2)} ฿
+                        </strong>
+                        {p.costPrice > 0 && (
+                          <span className="text-xs text-muted">(ทุน {(Number(p.costPrice) || 0).toFixed(2)})</span>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Stock Count & Quick Stepper (+1 / -1) */}
                     <div className="text-right">
                       <span className="text-xs text-muted block">คงเหลือในคลัง:</span>
-                      <strong className={`text-lg font-mono font-bold ${isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'}`}>
-                        {p.isWeighted ? (Number(p.stock) || 0).toFixed(3) : (Number(p.stock) || 0)} {p.unit}
-                      </strong>
+                      <div className="flex items-center gap-1 mt-1 justify-end">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-xs font-bold"
+                          onClick={() => handleQuickStockStep(p, -1)}
+                          title="ลดสต็อก 1"
+                        >
+                          <Minus size={11} />
+                        </button>
+                        <strong
+                          className={`text-base font-mono font-bold px-1 ${
+                            isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'
+                          }`}
+                        >
+                          {p.isWeighted ? stockVal.toFixed(3) : stockVal} {p.unit}
+                        </strong>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-xs font-bold"
+                          onClick={() => handleQuickStockStep(p, 1)}
+                          title="เพิ่มสต็อก 1"
+                        >
+                          <Plus size={11} />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-2 mt-3 pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+                  {/* Actions Grid */}
+                  <div className="flex items-center gap-1 mt-3 pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+                    {/* Main Edit & Photo & Stock Button */}
                     <button
                       type="button"
-                      className="btn btn-secondary btn-sm flex-1"
-                      onClick={() => handleOpenPriceModal(p)}
+                      className="btn btn-primary btn-sm flex-1 font-bold"
+                      onClick={() => {
+                        playClickSound();
+                        setEditingProduct(p);
+                      }}
+                      title="แก้ไขข้อมูล, เปลี่ยนรูปภาพ, และปรับสต็อก"
                     >
-                      <DollarSign size={15} />
-                      <span>ปรับราคา</span>
+                      <Edit size={14} />
+                      <span>แก้ไข/รูป/สต็อก</span>
                     </button>
+
                     <button
                       type="button"
-                      className="btn btn-secondary btn-sm flex-1"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleOpenPriceModal(p)}
+                      title="ปรับราคาขายเร็ว"
+                    >
+                      <DollarSign size={14} />
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => {
                         playClickSound();
                         setStickerProduct(p);
                       }}
+                      title="พิมพ์สติกเกอร์บาร์โค้ด"
                     >
-                      <Printer size={15} />
-                      <span>สติกเกอร์</span>
+                      <Printer size={14} />
                     </button>
+
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
@@ -242,7 +430,27 @@ export function InventoryView({ onNavigate }) {
                       }}
                       title="ดูประวัติการเคลื่อนไหวสต็อก"
                     >
-                      <History size={15} />
+                      <History size={14} />
+                    </button>
+
+                    {/* Discontinue / Reactivate Button */}
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${isDiscontinued ? 'btn-success' : 'btn-ghost text-amber-700'}`}
+                      onClick={() => handleToggleActive(p)}
+                      title={isDiscontinued ? 'เปิดขายอีกครั้ง' : 'เลิกขายสินค้านี้ (ซ่อนจากหน้าขาย)'}
+                    >
+                      {isDiscontinued ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </button>
+
+                    {/* Permanent Delete Button */}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm text-danger"
+                      onClick={() => handleDeleteProduct(p)}
+                      title="ลบสินค้านี้ถาวร"
+                    >
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
@@ -275,19 +483,22 @@ export function InventoryView({ onNavigate }) {
                 </tr>
               ) : (
                 filteredProducts.map((p) => {
-                  const isOutOfStock = p.stock <= 0;
-                  const isLowStock = p.stock > 0 && p.stock <= p.minStockAlert;
-                  const profit = p.sellPrice - (p.costPrice || 0);
-                  const marginPct = p.sellPrice > 0 ? ((profit / p.sellPrice) * 100).toFixed(0) : 0;
+                  const isDiscontinued = p.active === false;
+                  const stockVal = Number(p.stock) || 0;
+                  const minAlert = Number(p.minStockAlert) || 5;
+                  const isOutOfStock = stockVal <= 0;
+                  const isLowStock = stockVal > 0 && stockVal <= minAlert;
+                  const profit = (Number(p.sellPrice) || 0) - (Number(p.costPrice) || 0);
+                  const marginPct = (Number(p.sellPrice) || 0) > 0 ? ((profit / p.sellPrice) * 100).toFixed(0) : 0;
 
                   return (
-                    <tr key={p.id}>
+                    <tr key={p.id} className={isDiscontinued ? 'opacity-65 bg-gray-50' : ''}>
                       <td>
                         <div className="flex items-center gap-2">
                           <ProductThumbnail product={p} size={42} />
                           <div>
                             <strong className="block">{p.name}</strong>
-                            <span className="text-xs text-muted">จุดเตือน: {p.minStockAlert} {p.unit}</span>
+                            <span className="text-xs text-muted">จุดเตือน: {minAlert} {p.unit}</span>
                           </div>
                         </div>
                       </td>
@@ -303,10 +514,10 @@ export function InventoryView({ onNavigate }) {
                           <span className="badge-tag tag-discrete">{p.unit}</span>
                         )}
                       </td>
-                      <td>{p.costPrice ? `${p.costPrice.toFixed(2)} ฿` : '-'}</td>
+                      <td>{p.costPrice ? `${(Number(p.costPrice) || 0).toFixed(2)} ฿` : '-'}</td>
                       <td>
                         <strong className="text-primary font-bold">
-                          {p.sellPrice.toFixed(2)} ฿
+                          {(Number(p.sellPrice) || 0).toFixed(2)} ฿
                         </strong>
                       </td>
                       <td>
@@ -315,12 +526,32 @@ export function InventoryView({ onNavigate }) {
                         </span>
                       </td>
                       <td>
-                        <strong className={`font-mono ${isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'}`}>
-                          {p.isWeighted ? (Number(p.stock) || 0).toFixed(3) : (Number(p.stock) || 0)} {p.unit}
-                        </strong>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-xs"
+                            onClick={() => handleQuickStockStep(p, -1)}
+                            title="ลด 1"
+                          >
+                            <Minus size={10} />
+                          </button>
+                          <strong className={`font-mono px-1 ${isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'}`}>
+                            {p.isWeighted ? stockVal.toFixed(3) : stockVal} {p.unit}
+                          </strong>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-xs"
+                            onClick={() => handleQuickStockStep(p, 1)}
+                            title="เพิ่ม 1"
+                          >
+                            <Plus size={10} />
+                          </button>
+                        </div>
                       </td>
                       <td>
-                        {isOutOfStock ? (
+                        {isDiscontinued ? (
+                          <span className="status-pill status-error">⏸️ เลิกขาย</span>
+                        ) : isOutOfStock ? (
                           <span className="status-pill status-out">🔴 หมด</span>
                         ) : isLowStock ? (
                           <span className="status-pill status-low">🟡 ใกล้หมด</span>
@@ -330,6 +561,17 @@ export function InventoryView({ onNavigate }) {
                       </td>
                       <td>
                         <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            className="table-action-btn"
+                            title="แก้ไขสินค้า / เปลี่ยนรูป / สต็อก"
+                            onClick={() => {
+                              playClickSound();
+                              setEditingProduct(p);
+                            }}
+                          >
+                            <Edit size={16} />
+                          </button>
                           <button
                             type="button"
                             className="table-action-btn"
@@ -360,6 +602,22 @@ export function InventoryView({ onNavigate }) {
                           >
                             <History size={16} />
                           </button>
+                          <button
+                            type="button"
+                            className={`table-action-btn ${isDiscontinued ? 'text-success' : 'text-amber-700'}`}
+                            title={isDiscontinued ? 'เปิดขายอีกครั้ง' : 'เลิกขายสินค้านี้'}
+                            onClick={() => handleToggleActive(p)}
+                          >
+                            {isDiscontinued ? <Eye size={15} /> : <EyeOff size={15} />}
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action-btn text-danger"
+                            title="ลบสินค้าถาวร"
+                            onClick={() => handleDeleteProduct(p)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -370,6 +628,13 @@ export function InventoryView({ onNavigate }) {
           </table>
         </div>
       )}
+
+      {/* Full Product & Stock & Photo Edit Modal */}
+      <ProductEditModal
+        product={editingProduct}
+        isOpen={Boolean(editingProduct)}
+        onClose={() => setEditingProduct(null)}
+      />
 
       {/* Quick Price Edit Modal */}
       <QuickPriceModal
@@ -398,9 +663,11 @@ export function InventoryView({ onNavigate }) {
                 ✕
               </button>
             </div>
-            <div className="history-list-scroll max-h-96 overflow-y-auto">
+            <div className="modal-body p-3 max-h-96 overflow-y-auto">
               {stockMovements.filter((m) => m.productId === viewHistoryProduct.id).length === 0 ? (
-                <p className="text-center text-muted py-6">ยังไม่มีประวัติการเคลื่อนไหวสต็อกของสินค้านี้</p>
+                <div className="text-center py-6 text-muted">
+                  ยังไม่มีประวัติการเคลื่อนไหวสต็อกของสินค้านี้
+                </div>
               ) : (
                 <table className="pos-table text-sm">
                   <thead>
@@ -409,7 +676,7 @@ export function InventoryView({ onNavigate }) {
                       <th>ประเภท</th>
                       <th>จำนวน</th>
                       <th>เหตุผล</th>
-                      <th>ผู้ทำ</th>
+                      <th>ผู้ทำรายการ</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -419,8 +686,8 @@ export function InventoryView({ onNavigate }) {
                         <tr key={m.id}>
                           <td>{new Date(m.timestamp).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</td>
                           <td>
-                            <span className={`badge-tag ${m.type === 'restock' ? 'tag-low' : m.type === 'sale' ? 'tag-out' : 'tag-discrete'}`}>
-                              {m.type === 'sale' ? 'ขาย' : m.type === 'restock' ? 'รับเข้า' : 'ปรับยอด'}
+                            <span className={`badge-tag ${m.type.includes('sale') ? 'tag-out' : m.qty > 0 ? 'tag-scale' : 'tag-low'}`}>
+                              {m.type === 'sale' ? 'ขาย' : m.type.includes('restock') ? 'รับเข้า' : 'ปรับยอด'}
                             </span>
                           </td>
                           <td className={`font-mono font-bold ${m.qty > 0 ? 'text-success' : 'text-danger'}`}>
@@ -447,6 +714,13 @@ export function InventoryView({ onNavigate }) {
       <EasyAddProductModal
         isOpen={isEasyAddOpen}
         onClose={() => setIsEasyAddOpen(false)}
+        onOpenTwoShot={() => setIsTwoShotOpen(true)}
+      />
+
+      {/* Two-Shot AI Add Product Modal */}
+      <TwoShotAddProductModal
+        isOpen={isTwoShotOpen}
+        onClose={() => setIsTwoShotOpen(false)}
       />
     </div>
   );

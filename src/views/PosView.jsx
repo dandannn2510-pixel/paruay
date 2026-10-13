@@ -29,6 +29,7 @@ import { UnregisteredItemModal } from '../components/UnregisteredItemModal';
 import { PaymentModal } from '../components/PaymentModal';
 import { ParkedBillsModal } from '../components/ParkedBillsModal';
 import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { TwoShotAddProductModal } from '../components/TwoShotAddProductModal';
 import { QuickPriceModal } from '../components/QuickPriceModal';
 import { getProductPhotoUrl, handleImageFallback } from '../utils/imageUtils';
 import { playScanBeep, playErrorBuzz, playClickSound, playCashRegisterChime } from '../utils/sound';
@@ -72,6 +73,7 @@ export function PosView({ onOpenMenu }) {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isParkedModalOpen, setIsParkedModalOpen] = useState(false);
   const [isEasyAddOpen, setIsEasyAddOpen] = useState(false);
+  const [isTwoShotOpen, setIsTwoShotOpen] = useState(false);
   const [editingPriceProduct, setEditingPriceProduct] = useState(null);
 
   // Cheerful checkout success toast (replaces receipt modal)
@@ -343,6 +345,20 @@ export function PosView({ onOpenMenu }) {
             >
               <Plus size={18} />
               <span className="btn-text-responsive">+ สินค้า</span>
+            </button>
+
+            {/* 2-Shot AI Add Product Button */}
+            <button
+              type="button"
+              className="btn btn-two-shot-trigger"
+              onClick={() => {
+                playClickSound();
+                setIsTwoShotOpen(true);
+              }}
+              title="ถ่าย 2 รูปเพิ่มสินค้า (1. รูปฉลากเพื่อเอาชื่อ + 2. รูปบาร์โค้ดเพื่อเอารหัส)"
+            >
+              <Sparkles size={17} className="two-shot-sparkle-icon" />
+              <span className="btn-text-responsive">ถ่าย 2 รูป</span>
             </button>
           </div>
 
@@ -690,6 +706,18 @@ export function PosView({ onOpenMenu }) {
       <EasyAddProductModal
         isOpen={isEasyAddOpen}
         onClose={() => setIsEasyAddOpen(false)}
+        onOpenTwoShot={() => setIsTwoShotOpen(true)}
+      />
+
+      {/* 6.5. Two-Shot AI Add Product Modal */}
+      <TwoShotAddProductModal
+        isOpen={isTwoShotOpen}
+        onClose={() => setIsTwoShotOpen(false)}
+        onProductCreated={(newProd) => {
+          if (newProd && !newProd.isWeighted) {
+            addToCart(newProd, { quantity: 1 });
+          }
+        }}
       />
 
       {/* 7. Quick Price Modal */}

@@ -27,3 +27,40 @@ export function handleImageFallback(e, categoryId) {
     currentTarget.src = DEFAULT_SVG_PLACEHOLDER;
   }
 }
+
+/**
+ * Compress and downscale an image file to a lightweight data URL
+ * Perfect for storing product photos without blowing up LocalStorage quota
+ */
+export async function compressImageFile(file, maxDimension = 500, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new window.Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDimension || h > maxDimension) {
+          if (w > h) {
+            h = Math.round((h * maxDimension) / w);
+            w = maxDimension;
+          } else {
+            w = Math.round((w * maxDimension) / h);
+            h = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}

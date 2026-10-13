@@ -758,9 +758,37 @@ export function StoreProvider({ children }) {
     const parsedCounted = parseFloat(countedStock);
     if (isNaN(parsedCounted)) return false;
 
+    let targetProduct = null;
+    let oldStock = 0;
+
     setProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, stock: parsedCounted } : p))
+      prev.map((p) => {
+        if (p.id === productId) {
+          targetProduct = p;
+          oldStock = Number(p.stock) || 0;
+          return { ...p, stock: parsedCounted };
+        }
+        return p;
+      })
     );
+
+    const diff = Number((parsedCounted - oldStock).toFixed(3));
+    if (diff !== 0 && targetProduct) {
+      setStockMovements((prev) => [
+        {
+          id: 'mov_' + Date.now() + Math.random().toString(36).substr(2, 4),
+          productId,
+          productName: targetProduct.name,
+          type: diff > 0 ? 'adjustment_in' : 'adjustment_out',
+          qty: diff,
+          unit: targetProduct.unit,
+          reason,
+          performedBy,
+          timestamp: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+    }
 
     // Sync to Supabase
     const supabase = getSupabaseClient();
@@ -774,7 +802,6 @@ export function StoreProvider({ children }) {
 
     return true;
   };
-
 
   const addProduct = (productData) => {
     const newProduct = {
@@ -820,20 +847,47 @@ export function StoreProvider({ children }) {
 
     const supabase = getSupabaseClient();
     if (supabase) {
+      const dbUpdates = {
+        name: updates.name,
+        sell_price: updates.sellPrice !== undefined ? parseFloat(updates.sellPrice) : undefined,
+        cost_price: updates.costPrice !== undefined ? parseFloat(updates.costPrice) : undefined,
+        stock: updates.stock !== undefined ? parseFloat(updates.stock) : undefined,
+        min_stock_alert: updates.minStockAlert !== undefined ? parseFloat(updates.minStockAlert) : undefined,
+        barcode: updates.barcode,
+        image: updates.image,
+        active: updates.active !== undefined ? updates.active : undefined,
+        unit: updates.unit,
+        category_id: updates.categoryId,
+        is_weighted: updates.isWeighted,
+        updated_at: new Date().toISOString(),
+      };
+      Object.keys(dbUpdates).forEach((k) => dbUpdates[k] === undefined && delete dbUpdates[k]);
+      supabase.from('products').update(dbUpdates).eq('id', productId).then();
+    }
+  };
+
+  const toggleProductActive = (productId) => {
+    let nextActive = false;
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id === productId) {
+          nextActive = p.active === false ? true : false;
+          return { ...p, active: nextActive };
+        }
+        return p;
+      })
+    );
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
       supabase
         .from('products')
-        .update({
-          name: updates.name,
-          sell_price: updates.sellPrice ? parseFloat(updates.sellPrice) : undefined,
-          cost_price: updates.costPrice ? parseFloat(updates.costPrice) : undefined,
-          stock: updates.stock ? parseFloat(updates.stock) : undefined,
-          barcode: updates.barcode,
-          image: updates.image,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ active: nextActive, updated_at: new Date().toISOString() })
         .eq('id', productId)
         .then();
     }
+
+    return nextActive;
   };
 
   const updateProductPrice = (productId, newSellPrice, newCostPrice = null) => {
@@ -877,6 +931,7 @@ export function StoreProvider({ children }) {
 
   const deleteProduct = (productId) => {
     setProducts((prev) => prev.filter((p) => p.id !== productId));
+    setCart((prev) => prev.filter((item) => item.productId !== productId));
     const supabase = getSupabaseClient();
     if (supabase) {
       supabase.from('products').delete().eq('id', productId).then();
@@ -958,6 +1013,7 @@ export function StoreProvider({ children }) {
         addProduct,
         updateProduct,
         deleteProduct,
+        toggleProductActive,
         openNewShift,
         closeShift,
         verifyAdminPin,

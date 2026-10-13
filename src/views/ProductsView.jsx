@@ -14,12 +14,16 @@ import {
   RefreshCw,
   Camera,
   Upload,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { generateInStoreBarcode } from '../utils/barcode';
 import { scanBarcodeFromImageFile } from '../utils/barcodeScanner';
 import { BarcodeStickerModal } from '../components/BarcodeStickerModal';
 import { EasyAddProductModal } from '../components/EasyAddProductModal';
+import { TwoShotAddProductModal } from '../components/TwoShotAddProductModal';
+import { ProductEditModal } from '../components/ProductEditModal';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { QuickPriceModal } from '../components/QuickPriceModal';
 import { ProductThumbnail } from '../components/ProductThumbnail';
@@ -27,11 +31,12 @@ import { FALLBACK_IMAGE_BY_CATEGORY, PRODUCT_IMAGE_PRESETS } from '../data/produ
 import { playClickSound, playScanBeep } from '../utils/sound';
 
 export function ProductsView() {
-  const { products, categories, addProduct, updateProduct, deleteProduct } = useStore();
+  const { products, categories, addProduct, updateProduct, deleteProduct, toggleProductActive } = useStore();
 
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isEasyAddOpen, setIsEasyAddOpen] = useState(false);
+  const [isTwoShotOpen, setIsTwoShotOpen] = useState(false);
 
   // Form Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -104,19 +109,6 @@ export function ProductsView() {
   const handleOpenEditModal = (p) => {
     playClickSound();
     setEditingProduct(p);
-    setName(p.name);
-    setType(p.type || 'packaged');
-    setCategoryId(p.categoryId);
-    setUnit(p.unit);
-    setIsWeighted(p.isWeighted || false);
-    setCostPrice(String(p.costPrice || ''));
-    setSellPrice(String(p.sellPrice || ''));
-    setStock(String(p.stock));
-    setMinStockAlert(String(p.minStockAlert || '5'));
-    setExpiryDaysAlert(String(p.expiryDaysAlert || '3'));
-    setBarcode(p.barcode || '');
-    setImageEmoji(p.image || '📦');
-    setIsModalOpen(true);
   };
 
   const handleGenerateBarcode = () => {
@@ -205,6 +197,18 @@ export function ProductsView() {
         <div className="header-actions">
           <button
             type="button"
+            className="btn btn-two-shot-trigger btn-large font-bold"
+            onClick={() => {
+              playClickSound();
+              setIsTwoShotOpen(true);
+            }}
+            title="ถ่าย 2 รูปเพื่อเพิ่มสินค้า: 1. รูปฉลากเพื่อเอาชื่อ + 2. รูปบาร์โค้ดเพื่อเอารหัส"
+          >
+            <Sparkles size={20} className="two-shot-sparkle-icon" />
+            <span>📸 ถ่าย 2 รูปเพิ่มด่วน (ฉลาก+บาร์โค้ด)</span>
+          </button>
+          <button
+            type="button"
             className="btn btn-primary btn-large font-bold"
             onClick={() => {
               playClickSound();
@@ -212,7 +216,7 @@ export function ProductsView() {
             }}
           >
             <Plus size={20} />
-            <span>+ เพิ่มสินค้าใหม่ (ง่ายสุดๆ)</span>
+            <span>+ เพิ่มสินค้าใหม่</span>
           </button>
           <button
             type="button"
@@ -274,7 +278,12 @@ export function ProductsView() {
                   <ProductThumbnail product={p} size={44} />
                 </td>
                 <td>
-                  <strong className="block">{p.name}</strong>
+                  <div className="flex items-center gap-1.5">
+                    <strong className="block">{p.name}</strong>
+                    {p.active === false && (
+                      <span className="status-pill status-error text-xs">⏸️ เลิกขาย</span>
+                    )}
+                  </div>
                   <span className="text-xs text-muted">
                     หมวด: {categories.find((c) => c.id === p.categoryId)?.name || '-'}
                   </span>
@@ -332,15 +341,26 @@ export function ProductsView() {
                     <button
                       type="button"
                       className="table-action-btn"
-                      title="แก้ไขสินค้า"
+                      title="แก้ไขสินค้า / เปลี่ยนรูป / ปรับสต็อก"
                       onClick={() => handleOpenEditModal(p)}
                     >
                       <Edit size={16} />
                     </button>
                     <button
                       type="button"
+                      className={`table-action-btn ${p.active === false ? 'text-success' : 'text-amber-700'}`}
+                      title={p.active === false ? 'เปิดขายอีกครั้ง' : 'เลิกขายสินค้านี้'}
+                      onClick={() => {
+                        playClickSound();
+                        toggleProductActive(p.id);
+                      }}
+                    >
+                      {p.active === false ? <Eye size={16} /> : <EyeOff size={16} />}
+                    </button>
+                    <button
+                      type="button"
                       className="table-action-btn text-danger"
-                      title="ลบสินค้า"
+                      title="ลบสินค้าถาวร"
                       onClick={() => handleDelete(p)}
                     >
                       <Trash2 size={16} />
@@ -583,6 +603,13 @@ export function ProductsView() {
         </div>
       )}
 
+      {/* Product Edit & Stock & Photo Modal */}
+      <ProductEditModal
+        product={editingProduct}
+        isOpen={Boolean(editingProduct)}
+        onClose={() => setEditingProduct(null)}
+      />
+
       {/* Barcode Sticker Modal */}
       <BarcodeStickerModal
         product={stickerProduct}
@@ -594,6 +621,13 @@ export function ProductsView() {
       <EasyAddProductModal
         isOpen={isEasyAddOpen}
         onClose={() => setIsEasyAddOpen(false)}
+        onOpenTwoShot={() => setIsTwoShotOpen(true)}
+      />
+
+      {/* Two-Shot AI Add Product Modal */}
+      <TwoShotAddProductModal
+        isOpen={isTwoShotOpen}
+        onClose={() => setIsTwoShotOpen(false)}
       />
 
       {/* Camera Live Scanner Modal */}

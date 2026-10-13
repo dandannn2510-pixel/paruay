@@ -39,6 +39,9 @@ export default function App() {
       if (params.get('mode') === 'scanner' || params.has('scanner') || params.has('pair')) {
         return 'mobileScanner';
       }
+      if (params.get('view')) {
+        return params.get('view');
+      }
     }
     return 'pos';
   });

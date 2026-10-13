@@ -18,7 +18,7 @@ import { CameraScannerModal } from './CameraScannerModal';
 import { PRODUCT_IMAGE_PRESETS, FALLBACK_IMAGE_BY_CATEGORY } from '../data/productPresets';
 import { playClickSound, playCashRegisterChime, playScanBeep } from '../utils/sound';
 
-export function EasyAddProductModal({ isOpen, onClose, defaultBarcode = '' }) {
+export function EasyAddProductModal({ isOpen, onClose, defaultBarcode = '', onOpenTwoShot }) {
   if (!isOpen) return null;
 
   const { products, categories, addProduct } = useStore();
@@ -144,6 +144,34 @@ export function EasyAddProductModal({ isOpen, onClose, defaultBarcode = '' }) {
         </div>
 
         <form onSubmit={handleSubmit} className="modal-form-body">
+          {/* Promo banner to switch to 2-shot photo mode */}
+          {onOpenTwoShot && (
+            <div
+              className="two-shot-promo-banner"
+              onClick={() => {
+                playClickSound();
+                onClose();
+                onOpenTwoShot();
+              }}
+              title="เปลี่ยนไปใช้ระบบถ่ายรูป 2 ช็อต (ถ่าย 1 รูปฉลาก + 1 รูปบาร์โค้ด)"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles size={18} className="text-purple-600 animate-pulse" />
+                <div>
+                  <div className="text-xs font-bold text-gray-800">
+                    📸 แนะนำ: ถ่ายรูป 2 ช็อต (AI ด่วน)
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    1. ถ่ายฉลาก (ได้ชื่อ+รูป) + 2. ถ่ายบาร์โค้ด (ได้รหัส)
+                  </div>
+                </div>
+              </div>
+              <span className="btn btn-xs btn-primary font-bold">
+                เปิดกล้อง ➔
+              </span>
+            </div>
+          )}
+
           {/* 1. Name & Sell Price (Primary) */}
           <div className="form-group mb-3">
             <label className="form-label font-bold text-base">1. ชื่อสินค้า *:</label>
