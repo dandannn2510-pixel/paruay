@@ -17,6 +17,7 @@ import {
   X,
   ArrowLeft,
   ChevronRight,
+  Smartphone,
 } from 'lucide-react';
 import { useStore } from './context/StoreContext';
 import { PosView } from './views/PosView';
@@ -27,16 +28,30 @@ import { StockAuditView } from './views/StockAuditView';
 import { ProductsView } from './views/ProductsView';
 import { ReportsView } from './views/ReportsView';
 import { SettingsView } from './views/SettingsView';
+import { MobileScannerView } from './views/MobileScannerView';
 import { playClickSound } from './utils/sound';
 
 export default function App() {
   const { settings, setSettings, userRole, setUserRole } = useStore();
-  const [currentView, setCurrentView] = useState('pos');
+  const [currentView, setCurrentView] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mode') === 'scanner' || params.has('scanner') || params.has('pair')) {
+        return 'mobileScanner';
+      }
+    }
+    return 'pos';
+  });
   const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false);
+
+  const urlPairCode = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('pair') || ''
+    : '';
 
   // Administrative / Secondary menu items
   const menuItems = [
     { id: 'pos', label: 'หน้าขายสินค้า (POS)', desc: 'ยิงบาร์โค้ด & ชั่งน้ำหนัก', icon: ShoppingCart, isPrimary: true },
+    { id: 'mobileScanner', label: '📱 ปืนสแกนมือถือ (ส่งเข้า iPad)', desc: 'ใช้มือถือเป็นเครื่องสแกนไร้สาย', icon: Smartphone },
     { id: 'dashboard', label: 'ภาพรวม & เตือนสต็อก', desc: 'ยอดขายวันนี้ & ของใกล้หมด', icon: LayoutDashboard },
     { id: 'inventory', label: 'คลังสินค้า & ปรับราคา', desc: 'ดูสต็อก & ปรับราคาของสด', icon: Package },
     { id: 'restock', label: 'รับของเข้าสต็อก', desc: 'เติมสินค้า & บันทึกราคาทุน', icon: PlusCircle },
@@ -146,6 +161,12 @@ export default function App() {
       <main className="app-main-content">
         {currentView === 'pos' && (
           <PosView onOpenMenu={() => setIsMenuDrawerOpen(true)} />
+        )}
+        {currentView === 'mobileScanner' && (
+          <MobileScannerView
+            initialPairCode={urlPairCode}
+            onExit={() => handleNavClick('pos')}
+          />
         )}
         {currentView === 'dashboard' && <DashboardView onNavigate={handleNavClick} />}
         {currentView === 'inventory' && <InventoryView onNavigate={handleNavClick} />}

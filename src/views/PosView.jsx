@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Search,
   Camera,
@@ -18,11 +18,13 @@ import {
   Menu,
   DollarSign,
   Edit,
+  Smartphone,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useHardwareScanner } from '../hooks/useHardwareScanner';
 import { WeightCalculatorModal } from '../components/WeightCalculatorModal';
 import { CameraScannerModal } from '../components/CameraScannerModal';
+import { RemoteScannerPairModal } from '../components/RemoteScannerPairModal';
 import { UnregisteredItemModal } from '../components/UnregisteredItemModal';
 import { PaymentModal } from '../components/PaymentModal';
 import { ParkedBillsModal } from '../components/ParkedBillsModal';
@@ -30,6 +32,11 @@ import { EasyAddProductModal } from '../components/EasyAddProductModal';
 import { QuickPriceModal } from '../components/QuickPriceModal';
 import { getProductPhotoUrl, handleImageFallback } from '../utils/imageUtils';
 import { playScanBeep, playErrorBuzz, playClickSound, playCashRegisterChime } from '../utils/sound';
+import {
+  getOrCreatePairCode,
+  generateNewPairCode,
+  createScannerHost,
+} from '../services/remoteScannerService';
 
 export function PosView({ onOpenMenu }) {
   const {
@@ -70,6 +77,13 @@ export function PosView({ onOpenMenu }) {
   // Cheerful checkout success toast (replaces receipt modal)
   const [checkoutSuccessToast, setCheckoutSuccessToast] = useState(null);
 
+  // Remote Handheld Scanner Bridge
+  const [pairCode, setPairCode] = useState(getOrCreatePairCode);
+  const [isRemotePairModalOpen, setIsRemotePairModalOpen] = useState(false);
+  const [remoteClientStatus, setRemoteClientStatus] = useState({ connected: false });
+  const [recentRemoteScans, setRecentRemoteScans] = useState([]);
+  const hostServiceRef = useRef(null);
+
   // Mobile cart drawer expand state
   const [isMobileCartExpanded, setIsMobileCartExpanded] = useState(false);
 
@@ -98,6 +112,51 @@ export function PosView({ onOpenMenu }) {
       setUnregisteredBarcode(cleanCode);
       setIsUnregisteredModalOpen(true);
     }
+  };
+
+  // Initialize Remote Scanner Host Bridge (Supabase Realtime)
+  useEffect(() => {
+    const host = createScannerHost({
+      pairCode,
+      onClientStatusChange: (status) => {
+        setRemoteClientStatus(status);
+      },
+      onBarcodeReceived: (scannedCode) => {
+        const clean = String(scannedCode).trim();
+        const matched = products.find((p) => p.active && String(p.barcode).trim() === clean);
+        handleBarcodeScanned(clean);
+
+        const timeStr = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+        setRecentRemoteScans((prev) => [
+          {
+            barcode: clean,
+            productName: matched?.name || 'สินค้าใหม่',
+            price: matched?.sellPrice || 0,
+            time: timeStr,
+          },
+          ...prev.slice(0, 19),
+        ]);
+
+        return {
+          productName: matched?.name || 'รับรหัสแล้ว',
+          price: matched?.sellPrice || 0,
+          cartCount: cartTotalItems + 1,
+        };
+      },
+    });
+
+    hostServiceRef.current = host;
+    return () => {
+      if (hostServiceRef.current) {
+        hostServiceRef.current.destroy();
+        hostServiceRef.current = null;
+      }
+    };
+  }, [pairCode, products, cartTotalItems]);
+
+  const handleGenerateNewPairCode = () => {
+    const newCode = generateNewPairCode();
+    setPairCode(newCode);
   };
 
   // Hardware Barcode Scanner listener (USB / Bluetooth gun)
@@ -243,10 +302,27 @@ export function PosView({ onOpenMenu }) {
                 playClickSound();
                 setIsCameraOpen(true);
               }}
-              title="เปิดกล้องมือถือสแกนบาร์โค้ด"
+              title="เปิดกล้องสแกนบาร์โค้ดบนเครื่องนี้"
             >
-              <Camera size={19} />
+              <Camera size={18} />
               <span className="btn-text-responsive">เปิดกล้อง</span>
+            </button>
+
+            {/* Remote Phone Scanner Pair Button */}
+            <button
+              type="button"
+              className={`btn btn-remote-scanner ${remoteClientStatus.connected ? 'is-connected' : ''}`}
+              onClick={() => {
+                playClickSound();
+                setIsRemotePairModalOpen(true);
+              }}
+              title="เชื่อมต่อมือถือเป็นปืนสแกนเนอร์ไร้สาย (ข้อมูลจะเด้งมาที่หน้านี้ทันที)"
+            >
+              <Smartphone size={18} className={remoteClientStatus.connected ? 'text-emerald-400' : ''} />
+              <span className="btn-text-responsive">
+                {remoteClientStatus.connected ? 'มือถือเชื่อมแล้ว' : 'ต่อมือถือสแกน'}
+              </span>
+              {remoteClientStatus.connected && <span className="status-dot-pulse bg-emerald-400" />}
             </button>
 
             {/* Quick Add Product Button */}
@@ -616,6 +692,16 @@ export function PosView({ onOpenMenu }) {
         product={editingPriceProduct}
         isOpen={Boolean(editingPriceProduct)}
         onClose={() => setEditingPriceProduct(null)}
+      />
+
+      {/* 8. Remote Scanner Phone Pairing Modal */}
+      <RemoteScannerPairModal
+        isOpen={isRemotePairModalOpen}
+        onClose={() => setIsRemotePairModalOpen(false)}
+        pairCode={pairCode}
+        onGenerateNewCode={handleGenerateNewPairCode}
+        clientStatus={remoteClientStatus}
+        recentRemoteScans={recentRemoteScans}
       />
     </div>
   );
