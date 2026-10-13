@@ -453,13 +453,12 @@ export function PosView({ onOpenMenu }) {
                             setEditingPriceProduct(p);
                           }}
                         >
-                          <Edit size={12} />
-                          <span>ปรับราคา</span>
+                          <Edit size={11} />
                         </button>
-                        <span className="prod-stock-hint">
-                          เหลือ: {p.isWeighted ? p.stock.toFixed(3) : p.stock}
-                        </span>
                       </div>
+                      <span className="prod-stock-hint">
+                        เหลือ: {p.isWeighted ? p.stock.toFixed(3) : p.stock}
+                      </span>
                     </div>
                   </div>
                 );
