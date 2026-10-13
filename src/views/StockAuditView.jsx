@@ -141,7 +141,7 @@ export function StockAuditView() {
                     </div>
                     <div className="text-right">
                       <span className="badge-tag tag-discrete">
-                        ในระบบ: {p.isWeighted ? p.stock.toFixed(3) : p.stock} {p.unit}
+                        ในระบบ: {p.isWeighted ? (Number(p.stock) || 0).toFixed(3) : (Number(p.stock) || 0)} {p.unit}
                       </span>
                     </div>
                   </div>
@@ -174,7 +174,7 @@ export function StockAuditView() {
                   <div className="diff-col">
                     <span className="diff-lbl">ตัวเลขในระบบ:</span>
                     <span className="diff-val text-muted">
-                      {selectedProduct.isWeighted ? selectedProduct.stock.toFixed(3) : selectedProduct.stock} {selectedProduct.unit}
+                      {selectedProduct.isWeighted ? (Number(selectedProduct.stock) || 0).toFixed(3) : (Number(selectedProduct.stock) || 0)} {selectedProduct.unit}
                     </span>
                   </div>
                   <div className="diff-col highlight">

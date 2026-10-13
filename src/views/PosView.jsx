@@ -88,8 +88,8 @@ export function PosView({ onOpenMenu }) {
   const [isMobileCartExpanded, setIsMobileCartExpanded] = useState(false);
 
   // Cart totals
-  const cartSubtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
-  const cartTotalItems = cart.reduce((sum, item) => sum + (item.isWeighted ? 1 : item.qty), 0);
+  const cartSubtotal = cart.reduce((sum, item) => sum + (Number(item?.subtotal) || 0), 0);
+  const cartTotalItems = cart.reduce((sum, item) => sum + (item?.isWeighted ? 1 : (Number(item?.qty) || 1)), 0);
 
   // Handle scanned barcode (from Camera or Hardware Scanner)
   const handleBarcodeScanned = (scannedCode) => {
@@ -208,21 +208,27 @@ export function PosView({ onOpenMenu }) {
 
   // Complete checkout (receipt modal removed per user instruction)
   const handleCompleteSale = (paymentData) => {
-    const saleResult = checkoutSale(paymentData);
-    if (saleResult) {
-      playCashRegisterChime();
-      setCheckoutSuccessToast({
-        billNumber: saleResult.billNumber,
-        total: saleResult.total,
-        paymentMethod: saleResult.paymentMethod,
-        change: saleResult.change,
-      });
-      setIsMobileCartExpanded(false);
-      setTimeout(() => {
-        setCheckoutSuccessToast(null);
-      }, 4000);
+    try {
+      const saleResult = checkoutSale(paymentData);
+      if (saleResult) {
+        playCashRegisterChime();
+        setCheckoutSuccessToast({
+          billNumber: saleResult.billNumber,
+          total: Number(saleResult.total) || 0,
+          paymentMethod: saleResult.paymentMethod,
+          change: Number(saleResult.change) || 0,
+        });
+        setIsMobileCartExpanded(false);
+        setTimeout(() => {
+          setCheckoutSuccessToast(null);
+        }, 4000);
+      }
+      return saleResult;
+    } catch (err) {
+      console.error('Checkout error:', err);
+      alert('เกิดข้อผิดพลาดในการบันทึกบิล กรุณาลองใหม่อีกครั้ง');
+      return null;
     }
-    return saleResult;
   };
 
   // Quick parking of current bill
@@ -244,8 +250,8 @@ export function PosView({ onOpenMenu }) {
           <div className="toast-content">
             <h4 className="font-bold">ชำระเงินเรียบร้อยแล้ว!</h4>
             <p className="text-xs">
-              ยอด {checkoutSuccessToast.total.toFixed(2)} บาท{' '}
-              {checkoutSuccessToast.change > 0 && `(เงินทอน ${checkoutSuccessToast.change.toFixed(2)} ฿)`}
+              ยอด {(Number(checkoutSuccessToast.total) || 0).toFixed(2)} บาท{' '}
+              {checkoutSuccessToast.change > 0 && `(เงินทอน ${(Number(checkoutSuccessToast.change) || 0).toFixed(2)} ฿)`}
             </p>
           </div>
         </div>
@@ -441,7 +447,7 @@ export function PosView({ onOpenMenu }) {
                       </h4>
                       <div className="prod-price-row">
                         <span className="prod-price">
-                          {p.sellPrice.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                          {(Number(p.sellPrice) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                           <small className="unit-label"> ฿/{p.unit}</small>
                         </span>
                         <button
@@ -457,7 +463,7 @@ export function PosView({ onOpenMenu }) {
                         </button>
                       </div>
                       <span className="prod-stock-hint">
-                        เหลือ: {p.isWeighted ? p.stock.toFixed(3) : p.stock}
+                        เหลือ: {p.isWeighted ? (Number(p.stock) || 0).toFixed(3) : (Number(p.stock) || 0)}
                       </span>
                     </div>
                   </div>
@@ -536,16 +542,16 @@ export function PosView({ onOpenMenu }) {
                       )}
                     </div>
                     <div className="cart-item-price-unit text-muted">
-                      @{item.sellPrice.toFixed(2)} บาท/{item.unit}
+                      @{(Number(item?.sellPrice) || 0).toFixed(2)} บาท/{item?.unit || 'ชิ้น'}
                     </div>
                   </div>
 
                   {/* Quantity & Weight Controls */}
                   <div className="cart-row-controls">
-                    {item.isWeighted ? (
+                    {item?.isWeighted ? (
                       <div className="weighted-control-box">
                         <span className="weighted-qty font-bold text-accent">
-                          {item.qty.toFixed(3)} {item.unit}
+                          {(Number(item?.qty) || 0).toFixed(3)} {item?.unit || 'กก.'}
                         </span>
                       </div>
                     ) : (
@@ -576,7 +582,7 @@ export function PosView({ onOpenMenu }) {
 
                     <div className="cart-row-subtotal">
                       <span className="subtotal-amount font-bold">
-                        {item.subtotal.toFixed(2)} ฿
+                        {(Number(item?.subtotal) || 0).toFixed(2)} ฿
                       </span>
                     </div>
 
@@ -604,7 +610,7 @@ export function PosView({ onOpenMenu }) {
             <span className="summary-label">ยอดรวม:</span>
             <div className="summary-total-val">
               <span className="amount-highlight">
-                {cartSubtotal.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {(Number(cartSubtotal) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
               <span className="curr"> บาท</span>
             </div>
@@ -621,7 +627,7 @@ export function PosView({ onOpenMenu }) {
           >
             <span>คิดเงิน / ชำระ</span>
             <span className="checkout-total-pill">
-              {cartSubtotal.toFixed(2)} ฿
+              {(Number(cartSubtotal) || 0).toFixed(2)} ฿
             </span>
             <ArrowRight size={22} />
           </button>

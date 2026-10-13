@@ -216,7 +216,7 @@ export function DashboardView({ onNavigate }) {
                     </div>
                     <div className="alert-item-badge">
                       <span className="badge-tag tag-low">
-                        เหลือ {p.isWeighted ? p.stock.toFixed(3) : p.stock} {p.unit} (จุดเตือน {p.minStockAlert})
+                        เหลือ {p.isWeighted ? (Number(p.stock) || 0).toFixed(3) : (Number(p.stock) || 0)} {p.unit} (จุดเตือน {p.minStockAlert})
                       </span>
                       <button
                         type="button"
@@ -258,13 +258,13 @@ export function DashboardView({ onNavigate }) {
                     <div>
                       <h4 className="font-medium">{item.name}</h4>
                       <p className="text-xs text-muted">
-                        ราคาขาย: <strong>{item.sellPrice.toFixed(2)} ฿/{item.unit}</strong>
+                        ราคาขาย: <strong>{(Number(item.sellPrice) || 0).toFixed(2)} ฿/{item.unit}</strong>
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <span className="text-sm font-bold text-accent">
-                      {item.isWeighted ? `${item.stock.toFixed(3)} กก.` : `${item.stock} ${item.unit}`}
+                      {item.isWeighted ? `${(Number(item.stock) || 0).toFixed(3)} กก.` : `${(Number(item.stock) || 0)} ${item.unit}`}
                     </span>
                     <p className="text-xs text-muted">
                       เตือนหมดอายุ: {item.expiryDaysAlert || 2} วัน

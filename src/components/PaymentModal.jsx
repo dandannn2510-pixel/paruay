@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Banknote, QrCode, CheckCircle2, X, Upload, Image, AlertTriangle } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Banknote, QrCode, CheckCircle2, X, Upload, Image, AlertTriangle, RotateCcw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { playClickSound, playCashRegisterChime, playErrorBuzz } from '../utils/sound';
 
@@ -22,16 +22,28 @@ export function PaymentModal({ isOpen, onClose, onCompleteSale }) {
   const discountVal = parseFloat(discount) || 0;
   const netTotal = Math.max(0, rawSubtotal - discountVal);
 
-  const [receivedCash, setReceivedCash] = useState(String(Math.ceil(netTotal)));
+  // Default to empty string so user doesn't have to backspace/delete the pre-filled amount!
+  const [receivedCash, setReceivedCash] = useState('');
   const receivedCashNum = parseFloat(receivedCash) || 0;
   const change = Math.max(0, Number((receivedCashNum - netTotal).toFixed(2)));
+
+  // Reset fields cleanly whenever modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setReceivedCash('');
+      setDiscount('');
+      setMethod('cash');
+      setDiscountPinPrompt(false);
+      setPinError('');
+    }
+  }, [isOpen]);
 
   // QR Upload
   const qrFileInputRef = useRef(null);
 
   // Quick cash buttons
   const quickBills = [
-    { label: 'พอดี', val: netTotal },
+    { label: 'พอดี', val: netTotal, isExact: true },
     { label: '20', val: 20 },
     { label: '50', val: 50 },
     { label: '100', val: 100 },
@@ -84,21 +96,25 @@ export function PaymentModal({ isOpen, onClose, onCompleteSale }) {
   };
 
   const handleConfirmPayment = () => {
-    if (method === 'cash' && receivedCashNum < netTotal) {
+    if (method === 'cash' && (receivedCashNum < netTotal || receivedCashNum === 0)) {
       playErrorBuzz();
-      alert('จำนวนเงินที่รับมาน้อยกว่ายอดชำระ!');
+      alert('จำนวนเงินที่รับมาน้อยกว่ายอดชำระ! (กรุณาใส่จำนวนเงิน หรือกดปุ่ม พอดี)');
       return;
     }
 
-    onCompleteSale({
-      paymentMethod: method,
-      cashReceived: method === 'cash' ? receivedCashNum : netTotal,
-      change: method === 'cash' ? change : 0,
-      discount: discountVal,
-      cashierName: userRole === 'owner' ? 'เจ้าของร้าน' : 'แคชเชียร์',
-    });
-
-    onClose();
+    try {
+      onCompleteSale({
+        paymentMethod: method,
+        cashReceived: method === 'cash' ? receivedCashNum : netTotal,
+        change: method === 'cash' ? change : 0,
+        discount: discountVal,
+        cashierName: userRole === 'owner' ? 'เจ้าของร้าน' : 'แคชเชียร์',
+      });
+    } catch (err) {
+      console.error('Complete sale error:', err);
+    } finally {
+      onClose();
+    }
   };
 
   const currentQrSrc = settings.permanentQrImage || '/qr-promptpay.png';
@@ -164,15 +180,23 @@ export function PaymentModal({ isOpen, onClose, onCompleteSale }) {
         {method === 'cash' && (
           <div className="cash-tab-body">
             <div className="form-group">
-              <label className="form-label">เงินที่รับมา (บาท):</label>
+              <label className="form-label font-medium">เงินที่รับจากลูกค้า (บาท):</label>
               <div className="big-input-wrapper">
                 <input
                   type="number"
-                  step="1"
+                  step="any"
                   min="0"
+                  inputMode="decimal"
+                  placeholder="0.00"
                   className="big-number-input highlight-cash"
                   value={receivedCash}
                   onChange={(e) => setReceivedCash(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && receivedCashNum >= netTotal) {
+                      handleConfirmPayment();
+                    }
+                  }}
                   autoFocus
                 />
                 <span className="unit-badge">บาท</span>
@@ -187,27 +211,53 @@ export function PaymentModal({ isOpen, onClose, onCompleteSale }) {
                   <button
                     key={idx}
                     type="button"
-                    className={`quick-chip ${receivedCash === String(bill.val) ? 'active' : ''}`}
+                    className={`quick-chip ${bill.isExact ? 'exact-chip' : ''} ${receivedCash === String(bill.val) ? 'active' : ''}`}
                     onClick={() => handleQuickCash(bill.val)}
                   >
                     {bill.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className="quick-chip clear-chip"
+                  onClick={() => {
+                    playClickSound();
+                    setReceivedCash('');
+                  }}
+                  title="ล้างจำนวนเงิน"
+                >
+                  <RotateCcw size={13} />
+                  <span>ล้าง</span>
+                </button>
               </div>
             </div>
 
             {/* Giant Change Display */}
-            <div className={`change-display-card ${receivedCashNum >= netTotal ? 'success' : 'insufficient'}`}>
-              <div className="change-label">
-                {receivedCashNum >= netTotal ? 'เงินทอนลูกค้า' : 'ยังขาดอีก'}
+            {(!receivedCash || receivedCashNum === 0) ? (
+              <div className="change-display-card waiting">
+                <div className="change-label">รอรับเงินจากลูกค้า</div>
+                <div className="change-value text-muted">
+                  0.00 <small>บาท</small>
+                </div>
+                <span className="text-xs text-muted">พิมพ์จำนวนเงิน หรือแตะปุ่ม &quot;พอดี&quot; / แบงก์</span>
               </div>
-              <div className="change-value">
-                {receivedCashNum >= netTotal
-                  ? change.toLocaleString('th-TH', { minimumFractionDigits: 2 })
-                  : (netTotal - receivedCashNum).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-                <small> บาท</small>
+            ) : receivedCashNum < netTotal ? (
+              <div className="change-display-card insufficient">
+                <div className="change-label">ยังขาดอีก</div>
+                <div className="change-value">
+                  {(netTotal - receivedCashNum).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                  <small> บาท</small>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="change-display-card success">
+                <div className="change-label">เงินทอนลูกค้า</div>
+                <div className="change-value">
+                  {change.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                  <small> บาท</small>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -312,7 +362,7 @@ export function PaymentModal({ isOpen, onClose, onCompleteSale }) {
             type="button"
             className="btn btn-success btn-large flex-1 font-bold"
             onClick={handleConfirmPayment}
-            disabled={method === 'cash' && receivedCashNum < netTotal}
+            disabled={method === 'cash' && (receivedCashNum < netTotal || receivedCashNum === 0)}
           >
             <CheckCircle2 size={22} />
             <span>

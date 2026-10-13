@@ -313,7 +313,7 @@ export function ProductsView() {
                 </td>
                 <td>
                   <span className="font-mono font-bold">
-                    {p.isWeighted ? p.stock.toFixed(3) : p.stock} {p.unit}
+                    {p.isWeighted ? (Number(p.stock) || 0).toFixed(3) : (Number(p.stock) || 0)} {p.unit}
                   </span>
                 </td>
                 <td>

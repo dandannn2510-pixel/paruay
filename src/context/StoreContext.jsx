@@ -14,10 +14,18 @@ export function StoreProvider({ children }) {
       const saved = localStorage.getItem(LS_PREFIX + 'products');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.length > 0 && (!parsed[0].image || (!parsed[0].image.startsWith('http') && !parsed[0].image.startsWith('data:') && !parsed[0].image.startsWith('/')))) {
-          return INITIAL_PRODUCTS;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (!parsed[0].image || (!parsed[0].image.startsWith('http') && !parsed[0].image.startsWith('data:') && !parsed[0].image.startsWith('/'))) {
+            return INITIAL_PRODUCTS;
+          }
+          return parsed.map((p) => ({
+            ...p,
+            sellPrice: Number(p.sellPrice) || 0,
+            costPrice: Number(p.costPrice) || 0,
+            stock: Number(p.stock) || 0,
+            minStockAlert: Number(p.minStockAlert) || 0,
+          }));
         }
-        return parsed;
       }
       return INITIAL_PRODUCTS;
     } catch {
@@ -89,7 +97,19 @@ export function StoreProvider({ children }) {
   const [cart, setCart] = useState(() => {
     try {
       const saved = localStorage.getItem(LS_PREFIX + 'cart');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item) => ({
+            ...item,
+            sellPrice: Number(item.sellPrice) || 0,
+            costPrice: Number(item.costPrice) || 0,
+            qty: Number(item.qty) || 1,
+            subtotal: Number(item.subtotal) || ((Number(item.qty) || 1) * (Number(item.sellPrice) || 0)),
+          }));
+        }
+      }
+      return [];
     } catch {
       return [];
     }
@@ -140,37 +160,55 @@ export function StoreProvider({ children }) {
   const [cloudSyncStatus, setCloudSyncStatus] = useState('offline'); // 'offline' | 'connected' | 'syncing'
   const isSyncingRef = useRef(false);
 
-  // Sync state to LocalStorage
+  // Safe localStorage helper to prevent quota crash (e.g. QuotaExceededError)
+  const safeSetItem = (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (err) {
+      console.warn(`LocalStorage quota error for ${key}:`, err);
+      if (key.includes('sales_history') || key.includes('stock_movements')) {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            // Keep only latest 30 records to free space
+            localStorage.setItem(key, JSON.stringify(parsed.slice(0, 30)));
+          }
+        } catch (_) {}
+      }
+    }
+  };
+
+  // Sync state to LocalStorage safely
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'products', JSON.stringify(products));
+    safeSetItem(LS_PREFIX + 'products', JSON.stringify(products));
   }, [products]);
 
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'settings', JSON.stringify(settings));
+    safeSetItem(LS_PREFIX + 'settings', JSON.stringify(settings));
   }, [settings]);
 
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'user_role', userRole);
+    safeSetItem(LS_PREFIX + 'user_role', userRole);
   }, [userRole]);
 
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'active_shift', JSON.stringify(activeShift));
+    safeSetItem(LS_PREFIX + 'active_shift', JSON.stringify(activeShift));
   }, [activeShift]);
 
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'cart', JSON.stringify(cart));
+    safeSetItem(LS_PREFIX + 'cart', JSON.stringify(cart));
   }, [cart]);
 
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'parked_bills', JSON.stringify(parkedBills));
+    safeSetItem(LS_PREFIX + 'parked_bills', JSON.stringify(parkedBills));
   }, [parkedBills]);
 
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'sales_history', JSON.stringify(salesHistory));
+    safeSetItem(LS_PREFIX + 'sales_history', JSON.stringify(salesHistory));
   }, [salesHistory]);
 
   useEffect(() => {
-    localStorage.setItem(LS_PREFIX + 'stock_movements', JSON.stringify(stockMovements));
+    safeSetItem(LS_PREFIX + 'stock_movements', JSON.stringify(stockMovements));
   }, [stockMovements]);
 
   // ---------- CLOUD SYNC & REALTIME SUBSCRIPTION ----------
@@ -262,10 +300,10 @@ export function StoreProvider({ children }) {
                 p.id === updated.id
                   ? {
                       ...p,
-                      name: updated.name,
-                      sellPrice: parseFloat(updated.sell_price),
-                      costPrice: parseFloat(updated.cost_price),
-                      stock: parseFloat(updated.stock),
+                      name: updated.name || p.name,
+                      sellPrice: updated.sell_price !== undefined ? (parseFloat(updated.sell_price) || 0) : p.sellPrice,
+                      costPrice: updated.cost_price !== undefined ? (parseFloat(updated.cost_price) || 0) : p.costPrice,
+                      stock: updated.stock !== undefined ? (parseFloat(updated.stock) || 0) : p.stock,
                     }
                   : p
               )
@@ -369,23 +407,26 @@ export function StoreProvider({ children }) {
         let finalWeight = 0;
         let finalSubtotal = 0;
 
+        const prodSellPrice = Number(product.sellPrice) || 0;
+        const prodCostPrice = Number(product.costPrice) || 0;
+
         if (priceTarget !== null && priceTarget !== undefined && priceTarget > 0) {
           finalSubtotal = Number(priceTarget);
-          finalWeight = Number((finalSubtotal / product.sellPrice).toFixed(3));
+          finalWeight = prodSellPrice > 0 ? Number((finalSubtotal / prodSellPrice).toFixed(3)) : 0;
         } else if (weightInKg !== null && weightInKg !== undefined && weightInKg > 0) {
           finalWeight = Number(Number(weightInKg).toFixed(3));
-          finalSubtotal = Number((finalWeight * product.sellPrice).toFixed(2));
+          finalSubtotal = Number((finalWeight * prodSellPrice).toFixed(2));
         } else {
           finalWeight = 1.0;
-          finalSubtotal = product.sellPrice;
+          finalSubtotal = prodSellPrice;
         }
 
         const weightedItem = {
           cartItemId: 'item_' + Date.now() + Math.random().toString(36).substr(2, 4),
           productId: product.id,
           name: product.name,
-          sellPrice: product.sellPrice,
-          costPrice: product.costPrice || 0,
+          sellPrice: prodSellPrice,
+          costPrice: prodCostPrice,
           qty: finalWeight,
           weightInKg: finalWeight,
           unit: product.unit || 'กก.',
@@ -401,6 +442,10 @@ export function StoreProvider({ children }) {
       }
 
       // 3. Packaged item
+      const prodSellPrice = Number(product.sellPrice) || 0;
+      const prodCostPrice = Number(product.costPrice) || 0;
+      const addQty = Number(quantity) || 1;
+
       const existingIndex = prevCart.findIndex(
         (item) => item.productId === product.id && !item.isWeighted && !item.isUnregistered
       );
@@ -408,11 +453,13 @@ export function StoreProvider({ children }) {
       if (existingIndex > -1) {
         const updated = [...prevCart];
         const currentItem = updated[existingIndex];
-        const newQty = currentItem.qty + (Number(quantity) || 1);
+        const newQty = (Number(currentItem.qty) || 0) + addQty;
+        const itemPrice = Number(currentItem.sellPrice) || prodSellPrice;
         updated[existingIndex] = {
           ...currentItem,
+          sellPrice: itemPrice,
           qty: newQty,
-          subtotal: Number((newQty * currentItem.sellPrice).toFixed(2)),
+          subtotal: Number((newQty * itemPrice).toFixed(2)),
         };
         if (settings.soundEnabled) playScanBeep();
         return updated;
@@ -421,15 +468,15 @@ export function StoreProvider({ children }) {
           cartItemId: 'item_' + Date.now() + Math.random().toString(36).substr(2, 4),
           productId: product.id,
           name: product.name,
-          sellPrice: product.sellPrice,
-          costPrice: product.costPrice || 0,
-          qty: Number(quantity) || 1,
+          sellPrice: prodSellPrice,
+          costPrice: prodCostPrice,
+          qty: addQty,
           unit: product.unit || 'ชิ้น',
           isWeighted: false,
           isUnregistered: false,
           barcode: product.barcode,
           image: product.image,
-          subtotal: Number(((Number(quantity) || 1) * product.sellPrice).toFixed(2)),
+          subtotal: Number((addQty * prodSellPrice).toFixed(2)),
         };
         if (settings.soundEnabled) playScanBeep();
         return [...prevCart, newItem];
@@ -449,7 +496,7 @@ export function StoreProvider({ children }) {
               ...item,
               qty,
               weightInKg: item.isWeighted ? qty : undefined,
-              subtotal: Number((qty * item.sellPrice).toFixed(2)),
+              subtotal: Number((qty * (Number(item.sellPrice) || 0)).toFixed(2)),
             };
           }
           return item;
@@ -514,13 +561,28 @@ export function StoreProvider({ children }) {
     const randomSeq = String(salesHistory.length + 1).padStart(4, '0');
     const billNumber = `INV-${dateStr}-${randomSeq}`;
 
+    // Lightweight items representation (omits heavy base64 images to avoid quota and payload crashes)
+    const sanitizedItems = cart.map((item) => ({
+      cartItemId: item.cartItemId,
+      productId: item.productId,
+      name: item.name || 'สินค้า',
+      sellPrice: Number(item.sellPrice) || 0,
+      costPrice: Number(item.costPrice) || 0,
+      qty: Number(item.qty) || 1,
+      unit: item.unit || 'ชิ้น',
+      subtotal: Number(item.subtotal) || 0,
+      isWeighted: Boolean(item.isWeighted),
+      isUnregistered: Boolean(item.isUnregistered),
+      barcode: item.barcode || 'N/A',
+    }));
+
     const newSale = {
       id: 'sale_' + Date.now(),
       billNumber,
       createdAt: now.toISOString(),
       cashierName,
-      items: [...cart],
-      itemCount: cart.length,
+      items: sanitizedItems,
+      itemCount: sanitizedItems.length,
       subtotal,
       discount: Number(discount) || 0,
       total: finalTotal,
@@ -541,8 +603,9 @@ export function StoreProvider({ children }) {
           const pIndex = nextProducts.findIndex((p) => p.id === cartItem.productId);
           if (pIndex > -1) {
             const current = nextProducts[pIndex];
-            const deductQty = cartItem.qty;
-            const newStockVal = Number((current.stock - deductQty).toFixed(3));
+            const deductQty = Number(cartItem.qty) || 0;
+            const currentStock = Number(current.stock) || 0;
+            const newStockVal = Number((currentStock - deductQty).toFixed(3));
             nextProducts[pIndex] = {
               ...current,
               stock: newStockVal,
@@ -575,13 +638,20 @@ export function StoreProvider({ children }) {
     setSalesHistory((prev) => [newSale, ...prev]);
 
     if (activeShift) {
-      setActiveShift((prev) => ({
-        ...prev,
-        totalSales: Number((prev.totalSales + finalTotal).toFixed(2)),
-        cashSales: paymentMethod === 'cash' ? Number((prev.cashSales + finalTotal).toFixed(2)) : prev.cashSales,
-        promptpaySales: paymentMethod === 'promptpay' ? Number((prev.promptpaySales + finalTotal).toFixed(2)) : prev.promptpaySales,
-        billCount: prev.billCount + 1,
-      }));
+      setActiveShift((prev) => {
+        if (!prev) return prev;
+        const curTotal = Number(prev.totalSales) || 0;
+        const curCash = Number(prev.cashSales) || 0;
+        const curPrompt = Number(prev.promptpaySales) || 0;
+        const curBills = Number(prev.billCount) || 0;
+        return {
+          ...prev,
+          totalSales: Number((curTotal + finalTotal).toFixed(2)),
+          cashSales: paymentMethod === 'cash' ? Number((curCash + finalTotal).toFixed(2)) : curCash,
+          promptpaySales: paymentMethod === 'promptpay' ? Number((curPrompt + finalTotal).toFixed(2)) : curPrompt,
+          billCount: curBills + 1,
+        };
+      });
     }
 
     // 2. Cloud Sync (asynchronous without blocking the cashier)

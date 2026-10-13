@@ -704,30 +704,55 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .big-number-input {
-  font-size: 1.45rem !important;
+  width: 100%;
+  font-size: 1.75rem !important;
   font-weight: 700;
   text-align: right;
-  min-height: 52px !important;
+  min-height: 56px !important;
   font-family: var(--font-mono) !important;
+  padding-right: 58px !important;
+  padding-left: 16px !important;
+  border-radius: var(--radius-md) !important;
+  border: 2px solid var(--border-color);
+  background: #ffffff;
+  color: #059669;
+  letter-spacing: -0.01em;
+  transition: all 0.2s ease;
+}
+
+.big-number-input::-webkit-outer-spin-button,
+.big-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.big-number-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.big-number-input:focus {
+  border-color: #059669 !important;
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.12) !important;
+  outline: none;
 }
 
 .highlight-cash {
   color: #059669 !important;
-  border-color: #059669 !important;
 }
 
 .big-input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
+  width: 100%;
 }
 
 .big-input-wrapper .unit-badge {
   position: absolute;
-  left: 14px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-muted);
+  right: 16px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-secondary);
   pointer-events: none;
 }
 
@@ -1585,10 +1610,27 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff;
 }
 
+.quick-chip.exact-chip {
+  background: rgba(5, 150, 105, 0.1);
+  border-color: #059669;
+  color: #059669;
+  font-weight: 700;
+}
+
+.quick-chip.exact-chip:hover,
+.quick-chip.exact-chip.active {
+  background: #059669;
+  color: #ffffff;
+  border-color: #059669;
+}
+
 .clear-chip {
   background: transparent;
   border-color: var(--border-color);
   color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .result-highlight-card {
@@ -1686,6 +1728,11 @@ h1, h2, h3, h4, h5, h6 {
   text-align: center;
   margin-top: 0.75rem;
   border: 1px solid transparent;
+}
+
+.change-display-card.waiting {
+  background: var(--bg-app);
+  border-color: var(--border-color);
 }
 
 .change-display-card.success {

@@ -202,13 +202,13 @@ export function InventoryView({ onNavigate }) {
                         {p.sellPrice.toFixed(2)} ฿
                       </strong>
                       {p.costPrice > 0 && (
-                        <span className="text-xs text-muted ml-1">(ทุน {p.costPrice.toFixed(2)})</span>
+                        <span className="text-xs text-muted ml-1">(ทุน {(Number(p.costPrice) || 0).toFixed(2)})</span>
                       )}
                     </div>
                     <div className="text-right">
                       <span className="text-xs text-muted block">คงเหลือในคลัง:</span>
                       <strong className={`text-lg font-mono font-bold ${isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'}`}>
-                        {p.isWeighted ? p.stock.toFixed(3) : p.stock} {p.unit}
+                        {p.isWeighted ? (Number(p.stock) || 0).toFixed(3) : (Number(p.stock) || 0)} {p.unit}
                       </strong>
                     </div>
                   </div>
@@ -316,7 +316,7 @@ export function InventoryView({ onNavigate }) {
                       </td>
                       <td>
                         <strong className={`font-mono ${isOutOfStock ? 'text-danger' : isLowStock ? 'text-warning' : 'text-success'}`}>
-                          {p.isWeighted ? p.stock.toFixed(3) : p.stock} {p.unit}
+                          {p.isWeighted ? (Number(p.stock) || 0).toFixed(3) : (Number(p.stock) || 0)} {p.unit}
                         </strong>
                       </td>
                       <td>
