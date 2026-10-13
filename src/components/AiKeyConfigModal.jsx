@@ -16,6 +16,7 @@ import {
   getActiveGeminiApiKey,
   setStoredGeminiApiKey,
   testGeminiApiKey,
+  isUsingCentralDefaultKey,
 } from '../utils/aiVisionScanner';
 import { playClickSound, playCashRegisterChime, playErrorBuzz } from '../utils/sound';
 
@@ -160,12 +161,20 @@ export function AiKeyConfigModal({ isOpen, onClose, onKeySaved }) {
                 style={{ background: hasActiveKey ? '#22c55e' : '#94a3b8' }}
               />
               <span className="text-xs font-bold text-gray-800">
-                สถานะ: {hasActiveKey ? '🟢 AI Gemini Vision พร้อมทำงานแล้ว' : '⚪ ยังไม่ได้ใส่ API Key'}
+                สถานะ:{' '}
+                {hasActiveKey
+                  ? isUsingCentralDefaultKey() && !localStorage.getItem('paruay_gemini_api_key')
+                    ? '🟢 AI Gemini พร้อมทำงาน (เชื่อมต่อคีย์กลางอัตโนมัติทุกเครื่อง)'
+                    : '🟢 AI Gemini Vision พร้อมทำงานแล้ว'
+                  : '⚪ ยังไม่ได้ใส่ API Key'}
               </span>
             </div>
             {hasActiveKey && (
               <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-green-100 text-green-800 flex items-center gap-1">
-                <ShieldCheck size={13} /> ฟรีและเสถียร
+                <ShieldCheck size={13} />{' '}
+                {isUsingCentralDefaultKey() && !localStorage.getItem('paruay_gemini_api_key')
+                  ? 'คีย์กลางประจำร้าน'
+                  : 'ฟรีและเสถียร'}
               </span>
             )}
           </div>

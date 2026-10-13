@@ -19,10 +19,29 @@ export const CATEGORY_IDS = {
   SERVICE: 'cat_service', // บริการ & เบ็ดเตล็ด
 };
 
+// Central built-in default Gemini API key for all devices in the store
+const CENTRAL_DEFAULT_KEY =
+  typeof atob !== 'undefined'
+    ? atob('QVEuQWI4Uk42S1dEejdDaFBMbk8xOGp2eUhqc0JTSllsSkgxcTlCSEp6Nk5ULWxaSThTRGc=')
+    : '';
+
 /**
- * Get active Gemini API key from localStorage or Vite environment variable
+ * Check if the active key is the built-in central store key
+ */
+export function isUsingCentralDefaultKey() {
+  try {
+    const fromStorage = localStorage.getItem(GEMINI_API_KEY_STORAGE);
+    return !fromStorage && Boolean(CENTRAL_DEFAULT_KEY);
+  } catch (_) {
+    return Boolean(CENTRAL_DEFAULT_KEY);
+  }
+}
+
+/**
+ * Get active Gemini API key from localStorage, Vite env, or Central default store key
  */
 export function getActiveGeminiApiKey() {
+  // 1. User manual override in localStorage
   try {
     const fromStorage = localStorage.getItem(GEMINI_API_KEY_STORAGE);
     if (fromStorage && fromStorage.trim().length > 10) {
@@ -30,14 +49,15 @@ export function getActiveGeminiApiKey() {
     }
   } catch (_) {}
 
-  // Fallback to Vite env
+  // 2. Fallback to Vite env if set
   try {
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_API_KEY) {
       return import.meta.env.VITE_GEMINI_API_KEY.trim();
     }
   } catch (_) {}
 
-  return '';
+  // 3. Built-in central default key for all store devices
+  return CENTRAL_DEFAULT_KEY;
 }
 
 /**
